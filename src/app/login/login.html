@@ -1,0 +1,39 @@
+<div class="login-container">
+  <div class="glass-card login-card animate-fade-in">
+    <div class="logo-area">
+      <div class="glow-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      </div>
+      <h1>SmartHome</h1>
+      <p>Secure control at your fingertips</p>
+    </div>
+
+    @if (checkingAuth) {
+      <div class="auth-checking animate-fade-in">
+        <div class="spinner"></div>
+        <p>Verifying session...</p>
+      </div>
+    } @else {
+      <form class="login-form" (submit)="handleLogin($event)">
+        <div class="input-group">
+          <label>Email Address</label>
+          <input type="email" [(ngModel)]="email" name="email" placeholder="name@example.com" required>
+        </div>
+        
+        <div class="input-group">
+          <label>Password</label>
+          <input type="password" [(ngModel)]="password" name="password" placeholder="••••••••" required>
+        </div>
+
+        @if (error) {
+          <p class="error-msg">{{ error }}</p>
+        }
+
+        <button type="submit" class="btn-primary login-btn" [disabled]="loading">
+          {{ loading ? 'Authenticating...' : 'Sign In' }}
+        </button>
+      </form>
+    }
+
+  </div>
+</div>

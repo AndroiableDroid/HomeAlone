@@ -1,34 +1,82 @@
 #include <WiFi.h>
+#include <NimBLEDevice.h>
 #include <Firebase_ESP_Client.h>
-
-// Provide the token generation process info.
+#include <Preferences.h>
 #include "addons/TokenHelper.h"
 #include "addons/RTDBHelper.h"
-#define WIFI_SSID "14/12/17"
-#define WIFI_PASSWORD "EDC10C2B"
 
-#define API_KEY "YOUR_FIREBASE_API_KEY"
-#define DATABASE_URL "YOUR_FIREBASE_DATABASE_URL"
-#define USER_EMAIL "YOUR_AUTH_EMAIL"
-#define USER_PASSWORD "YOUR_AUTH_PASSWORD"
+#define API_KEY 
+#define DATABASE_URL 
+#define USER_EMAIL 
+#define USER_PASSWORD 
 
-const int relayPin = 5;
+// UUIDs for BLE Service and Characteristics
+#define SERVICE_UUID           "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
+#define CHARACTERISTIC_UUID_SSID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
+#define CHARACTERISTIC_UUID_PASS "6b4122d2-8a9d-4952-b8d2-4309320257e5"
 
-FirebaseData fbdo;
+const int relayPin = 27;
+const int ledPin = 2;
+
+// Only 2 FirebaseData objects to save RAM
+FirebaseData streamFbdo;  // For command stream
+FirebaseData reqFbdo;     // For all reads & writes
 FirebaseAuth auth;
 FirebaseConfig config;
+Preferences preferences;
 
-// Callback function to handle real-time database changes
-void streamCallback(FirebaseStream data) {
-  if (data.dataType() == "string" && data.stringData() == "UNLOCKED") {
-    Serial.println("Secure command received. Unlocking...");
-    
-    digitalWrite(relayPin, LOW); // Trigger relay
-    delay(2000);                 // Keep unlocked for 2 seconds
-    digitalWrite(relayPin, HIGH); // Lock again
-    
-    // Reset the database state back to LOCKED
-    Firebase.RTDB.setString(&fbdo, "/door/status", "LOCKED");
+bool isFirebaseReady = false;
+unsigned long lastHeartbeat = 0;
+unsigned long lastDoorCheck = 0;
+const unsigned long HEARTBEAT_INTERVAL = 30000;
+const unsigned long DOOR_CHECK_INTERVAL = 5000;
+
+bool isSetupMode = false;
+bool shouldReboot = false;
+String bleSsid = "";
+String blePass = "";
+
+// ─── LED Helpers ───────────────────────────────────────────
+
+void blinkLed(int delayMs) {
+  static unsigned long lastBlink = 0;
+  static bool ledState = false;
+  if (millis() - lastBlink >= delayMs) {
+    lastBlink = millis();
+    ledState = !ledState;
+    digitalWrite(ledPin, ledState ? HIGH : LOW);
+  }
+}
+
+void flashLed(int times, int delayMs) {
+  for (int i = 0; i < times; i++) {
+    digitalWrite(ledPin, HIGH);
+    delay(delayMs);
+    digitalWrite(ledPin, LOW);
+    delay(delayMs);
+  }
+}
+
+// ─── Firebase Command Stream Callback ──────────────────────
+// This ONLY listens to /device/command
+void commandCallback(FirebaseStream data) {
+  if (data.dataTypeEnum() != firebase_rtdb_data_type_string) return;
+
+  String cmd = data.stringData();
+  Serial.printf("[Stream] /device/command = %s\n", cmd.c_str());
+
+  if (cmd == "RESET_WIFI") {
+    Serial.println(">>> RESET_WIFI received! Clearing credentials...");
+    // Acknowledge immediately
+    Firebase.RTDB.setString(&reqFbdo, "/device/command", "IDLE");
+    flashLed(5, 100);
+
+    preferences.begin("wifi-creds", false);
+    preferences.clear();
+    preferences.end();
+
+    delay(1000);
+    ESP.restart();
   }
 }
 
@@ -36,36 +84,240 @@ void streamTimeoutCallback(bool timeout) {
   if (timeout) Serial.println("Stream timeout, resuming...");
 }
 
+// ─── Door Check (polling, saves RAM vs. a second stream) ───
+void checkDoorStatus() {
+  if (!Firebase.ready()) return;
+
+  if (Firebase.RTDB.getString(&reqFbdo, "/door/status")) {
+    String val = reqFbdo.stringData();
+    if (val == "UNLOCKED") {
+      Serial.println(">>> UNLOCK command detected!");
+      digitalWrite(relayPin, LOW);
+      delay(2000);
+      digitalWrite(relayPin, HIGH);
+      Firebase.RTDB.setString(&reqFbdo, "/door/status", "LOCKED");
+      Serial.println("Door re-locked.");
+    }
+  }
+}
+
+// ─── Heartbeat ─────────────────────────────────────────────
+void sendHeartbeat() {
+  if (!Firebase.ready()) return;
+
+  FirebaseJson json;
+  json.set("online", true);
+  json.set("rssi", WiFi.RSSI());
+  json.set("uptime", (int)(millis() / 1000));
+  json.set("lastSeen/.sv", "timestamp");
+
+  if (Firebase.RTDB.setJSON(&reqFbdo, "/device/status", &json)) {
+    Serial.println("Heartbeat sent.");
+  } else {
+    Serial.println("Heartbeat failed: " + reqFbdo.errorReason());
+  }
+}
+
+// ─── BLE Callbacks ─────────────────────────────────────────
+class ServerCallbacks : public NimBLEServerCallbacks {
+  void onConnect(NimBLEServer *pServer, NimBLEConnInfo &connInfo) {
+    Serial.print("BLE Client connected: ");
+    Serial.println(connInfo.getAddress().toString().c_str());
+    digitalWrite(ledPin, HIGH);
+  }
+  void onDisconnect(NimBLEServer *pServer, NimBLEConnInfo &connInfo, int reason) {
+    Serial.println("BLE Client disconnected. Resuming advertising...");
+    digitalWrite(ledPin, LOW);
+    NimBLEDevice::startAdvertising();
+  }
+};
+
+class SsidCallbacks : public NimBLECharacteristicCallbacks {
+  void onWrite(NimBLECharacteristic *pCharacteristic, NimBLEConnInfo &connInfo) {
+    std::string value = pCharacteristic->getValue();
+    bleSsid = String(value.c_str());
+    Serial.print("BLE Received SSID: ");
+    Serial.println(bleSsid);
+  }
+};
+
+class PassCallbacks : public NimBLECharacteristicCallbacks {
+  void onWrite(NimBLECharacteristic *pCharacteristic, NimBLEConnInfo &connInfo) {
+    std::string value = pCharacteristic->getValue();
+    blePass = String(value.c_str());
+    Serial.println("BLE Received Password. Saving and rebooting...");
+
+    if (bleSsid != "") {
+      preferences.begin("wifi-creds", false);
+      preferences.putString("ssid", bleSsid);
+      preferences.putString("password", blePass);
+      preferences.putInt("fail_count", 0);
+      preferences.end();
+      Serial.println("Credentials saved!");
+      flashLed(5, 100);
+      shouldReboot = true;
+    } else {
+      Serial.println("Error: SSID missing. Send SSID first.");
+    }
+  }
+};
+
+// ─── BLE Setup Mode ────────────────────────────────────────
+void startSetupMode() {
+  isSetupMode = true;
+  Serial.println("Entering BLE Setup Mode...");
+
+  NimBLEDevice::init("SmartLock-BLE");
+  NimBLEDevice::setPower(ESP_PWR_LVL_P9);
+
+  NimBLEServer *pServer = NimBLEDevice::createServer();
+  pServer->setCallbacks(new ServerCallbacks());
+
+  NimBLEService *pService = pServer->createService(SERVICE_UUID);
+
+  NimBLECharacteristic *pSsidChar = pService->createCharacteristic(
+    CHARACTERISTIC_UUID_SSID, NIMBLE_PROPERTY::WRITE
+  );
+  pSsidChar->setCallbacks(new SsidCallbacks());
+
+  NimBLECharacteristic *pPassChar = pService->createCharacteristic(
+    CHARACTERISTIC_UUID_PASS, NIMBLE_PROPERTY::WRITE
+  );
+  pPassChar->setCallbacks(new PassCallbacks());
+
+  pService->start();
+
+  NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
+  NimBLEAdvertisementData advData;
+  advData.setName("SmartLock-BLE");
+  advData.setFlags(0x06);
+  pAdvertising->setAdvertisementData(advData);
+
+  NimBLEAdvertisementData scanRsp;
+  scanRsp.setCompleteServices(NimBLEUUID(SERVICE_UUID));
+  pAdvertising->setScanResponseData(scanRsp);
+
+  pAdvertising->start();
+  Serial.println("BLE Advertising started. Device name: SmartLock-BLE");
+}
+
+// ─── Setup ─────────────────────────────────────────────────
 void setup() {
   Serial.begin(115200);
   pinMode(relayPin, OUTPUT);
   digitalWrite(relayPin, HIGH);
+  pinMode(ledPin, OUTPUT);
+  digitalWrite(ledPin, LOW);
 
-  // Connect to Wi-Fi
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  while (WiFi.status() != WL_CONNECTED) { 
-    delay(300); 
-    Serial.print("."); 
+  preferences.begin("wifi-creds", true); // Read-only
+  String savedSsid = preferences.getString("ssid", "");
+  String savedPass = preferences.getString("password", "");
+  int failCount = preferences.getInt("fail_count", 0);
+  preferences.end();
+
+  if (savedSsid == "") {
+    Serial.println("No saved credentials. Entering setup mode...");
+    startSetupMode();
+    return;
   }
-  Serial.println("\nWiFi connected.");
 
-  // Configure Firebase Auth
+  Serial.printf("Connecting to WiFi: %s (Attempt %d/3)\n", savedSsid.c_str(), failCount + 1);
+  WiFi.begin(savedSsid.c_str(), savedPass.c_str());
+
+  int counter = 0;
+  while (WiFi.status() != WL_CONNECTED && counter < 30) {
+    blinkLed(500);
+    delay(500);
+    Serial.print(".");
+    counter++;
+  }
+
+  if (WiFi.status() != WL_CONNECTED) {
+    failCount++;
+    preferences.begin("wifi-creds", false);
+    preferences.putInt("fail_count", failCount);
+    preferences.end();
+
+    if (failCount >= 3) {
+      Serial.println("\n3 WiFi failures. Clearing credentials...");
+      preferences.begin("wifi-creds", false);
+      preferences.clear();
+      preferences.end();
+    }
+    startSetupMode();
+    return;
+  }
+
+  // ── WiFi Connected ──
+  Serial.println("\nWiFi Connected! IP: " + WiFi.localIP().toString());
+  digitalWrite(ledPin, HIGH);
+
+  preferences.begin("wifi-creds", false);
+  preferences.putInt("fail_count", 0);
+  preferences.end();
+
   config.api_key = API_KEY;
   config.database_url = DATABASE_URL;
   auth.user.email = USER_EMAIL;
   auth.user.password = USER_PASSWORD;
   config.token_status_callback = tokenStatusCallback;
 
-  // Initialize Firebase and start the stream
   Firebase.begin(&config, &auth);
   Firebase.reconnectWiFi(true);
 
-  if (!Firebase.RTDB.beginStream(&fbdo, "/door/status")) {
-    Serial.printf("Stream error: %s\n", fbdo.errorReason().c_str());
+  // Wait for Firebase auth token (required before any DB operations)
+  Serial.print("Waiting for Firebase token");
+  int tokenWait = 0;
+  while (!Firebase.ready() && tokenWait < 30) {
+    delay(500);
+    Serial.print(".");
+    tokenWait++;
   }
-  Firebase.RTDB.setStreamCallback(&fbdo, streamCallback, streamTimeoutCallback);
+  if (!Firebase.ready()) {
+    Serial.println(" Failed! Rebooting...");
+    delay(1000);
+    ESP.restart();
+  }
+  Serial.println(" Ready!");
+
+  // Clear any stale command BEFORE starting the stream
+  Firebase.RTDB.setString(&reqFbdo, "/device/command", "IDLE");
+
+  // Start command stream on /device/command ONLY
+  if (!Firebase.RTDB.beginStream(&streamFbdo, "/device/command")) {
+    Serial.printf("Command stream error: %s\n", streamFbdo.errorReason().c_str());
+  }
+  Firebase.RTDB.setStreamCallback(&streamFbdo, commandCallback, streamTimeoutCallback);
+
+  isFirebaseReady = true;
+  Serial.println("System online. Listening for commands...");
 }
 
+// ─── Loop ──────────────────────────────────────────────────
 void loop() {
-  // The stream is handled asynchronously in the background
+  if (shouldReboot) {
+    delay(2000);
+    ESP.restart();
+  }
+
+  if (isSetupMode) {
+    blinkLed(200);
+    return;
+  }
+
+  if (!isFirebaseReady) return;
+
+  unsigned long now = millis();
+
+  // Check door status every 2 seconds (polling instead of 2nd stream)
+  if (now - lastDoorCheck >= DOOR_CHECK_INTERVAL) {
+    lastDoorCheck = now;
+    checkDoorStatus();
+  }
+
+  // Send heartbeat every 30 seconds
+  if (now - lastHeartbeat >= HEARTBEAT_INTERVAL || lastHeartbeat == 0) {
+    lastHeartbeat = now;
+    sendHeartbeat();
+  }
 }

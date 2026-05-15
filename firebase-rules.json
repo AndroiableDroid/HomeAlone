@@ -1,0 +1,12 @@
+{
+  "rules": {
+    "door": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "device": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    }
+  }
+}
