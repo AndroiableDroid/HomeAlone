@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { Database, ref, set, object } from '@angular/fire/database';
-import { Observable, map, combineLatest, timer } from 'rxjs';
+import { Observable, map, combineLatest, timer, startWith } from 'rxjs';
 
 export interface DeviceStatus {
   online: boolean;
@@ -25,6 +25,17 @@ export class LockService {
     return set(cmdRef, 'RESET_WIFI');
   }
 
+  setPump(state: 'ON' | 'OFF') {
+    return set(ref(this.db, 'pump/status'), state);
+  }
+
+  getPumpStatus(): Observable<string> {
+    return object(ref(this.db, 'pump/status')).pipe(
+      map(snap => (snap.snapshot.val() as string) || 'STOPPED'),
+      startWith('STOPPED') // Emit immediately so *ngIf never blocks the card
+    );
+  }
+
   getDeviceStatus(): Observable<DeviceStatus> {
     // Get the time offset between client and server
     const offsetRef = ref(this.db, '.info/serverTimeOffset');
@@ -37,15 +48,15 @@ export class LockService {
       map(snapshot => snapshot.snapshot.val() as any)
     );
 
-    // Combine with a timer to force re-evaluation of 'isStale' every 10 seconds
-    return combineLatest([statusData$, offset$, timer(0, 10000)]).pipe(
+    // Combine with a timer to force re-evaluation of 'isStale' every 5 seconds
+    return combineLatest([statusData$, offset$, timer(0, 5000)]).pipe(
       map(([val, offset]) => {
         if (!val) return { online: false };
 
         const serverNow = Date.now() + offset;
         const lastSeen = val.lastSeen ?? 0;
-        // Consider offline if lastSeen is > 50 seconds old (heartbeat is 30s)
-        const isStale = (serverNow - lastSeen) > 50000;
+        // Offline if lastSeen is > 25s old (heartbeat is every 15s, so 1 missed beat)
+        const isStale = (serverNow - lastSeen) > 25000;
 
         return {
           online: val.online === true && !isStale,

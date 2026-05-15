@@ -4,6 +4,10 @@
       ".read": "auth != null",
       ".write": "auth != null"
     },
+    "pump": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
     "device": {
       ".read": "auth != null",
       ".write": "auth != null"

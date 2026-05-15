@@ -20,9 +20,13 @@ export class DashboardComponent implements OnInit, OnDestroy {
 
   user$ = this.authService.user$;
   deviceStatus$ = this.lockService.getDeviceStatus();
+  pump$ = this.lockService.getPumpStatus();
   isUnlocking = false;
   isResettingWifi = false;
+  isPumpToggling = false;
+  pumpError = '';
   resetMessage = '';
+  isPumpOn = false;
 
   ngOnInit() {
     this.authSubscription = this.user$.subscribe(user => {
@@ -42,12 +46,24 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.isUnlocking = true;
     try {
       await this.lockService.triggerUnlock();
-      setTimeout(() => {
-        this.isUnlocking = false;
-      }, 3000);
+      setTimeout(() => { this.isUnlocking = false; }, 3000);
     } catch (err) {
       console.error('Failed to unlock', err);
       this.isUnlocking = false;
+    }
+  }
+
+  async togglePump(currentStatus: string) {
+    const isRunning = currentStatus === 'ON' || currentStatus === 'RUNNING';
+    this.isPumpToggling = true;
+    this.pumpError = '';
+    try {
+      await this.lockService.setPump(isRunning ? 'OFF' : 'ON');
+    } catch (err: any) {
+      console.error('Pump toggle failed', err);
+      this.pumpError = 'Failed: ' + (err?.message ?? 'Check Firebase rules.');
+    } finally {
+      this.isPumpToggling = false;
     }
   }
 

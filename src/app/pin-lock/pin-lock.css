@@ -1,0 +1,239 @@
+:host {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.pin-container {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at top, #1a1a2e 0%, #0d0d1a 60%, #050510 100%);
+  padding: 24px 16px;
+}
+
+.pin-card {
+  width: 100%;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
+}
+
+/* ─── Header ─────────────────────────── */
+.pin-header {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.lock-icon-wrap {
+  width: 64px;
+  height: 64px;
+  border-radius: 20px;
+  background: rgba(99, 102, 241, 0.12);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #818cf8;
+  box-shadow: 0 0 30px rgba(99, 102, 241, 0.2);
+}
+
+.pin-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: #f1f5f9;
+  margin: 0;
+  letter-spacing: -0.5px;
+}
+
+.pin-subtitle {
+  font-size: 13px;
+  color: #64748b;
+  margin: 0;
+}
+
+/* ─── Dots ───────────────────────────── */
+.dots-row {
+  display: flex;
+  gap: 14px;
+  height: 32px;
+  align-items: center;
+  transition: all 0.3s;
+}
+
+.dots-row.shake {
+  animation: shake 0.55s ease;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  15%       { transform: translateX(-8px); }
+  30%       { transform: translateX(8px); }
+  45%       { transform: translateX(-6px); }
+  60%       { transform: translateX(6px); }
+  75%       { transform: translateX(-3px); }
+  90%       { transform: translateX(3px); }
+}
+
+.dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(99, 102, 241, 0.4);
+  background: transparent;
+  transition: all 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.dot.dot-filled {
+  background: #818cf8;
+  border-color: #818cf8;
+  box-shadow: 0 0 10px rgba(129, 140, 248, 0.6);
+  transform: scale(1.15);
+}
+
+/* ─── Error ──────────────────────────── */
+.error-msg {
+  font-size: 13px;
+  color: #f87171;
+  text-align: center;
+  min-height: 20px;
+  animation: fadeIn 0.2s ease;
+}
+
+/* ─── Keypad ─────────────────────────── */
+.keypad {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.key-row {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+}
+
+.key-btn {
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  font-family: inherit;
+}
+
+.key-btn:active {
+  background: rgba(99, 102, 241, 0.18);
+  transform: scale(0.92);
+}
+
+.key-btn span {
+  font-size: 26px;
+  font-weight: 500;
+  line-height: 1;
+  color: #f1f5f9;
+}
+
+.key-btn sub {
+  font-size: 8px;
+  letter-spacing: 1.5px;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+.key-btn.key-back {
+  color: #94a3b8;
+  background: transparent;
+  border-color: transparent;
+}
+
+.key-btn.key-empty {
+  background: transparent;
+  border-color: transparent;
+  cursor: default;
+}
+
+.key-btn.key-bio {
+  background: rgba(99, 102, 241, 0.08);
+  border-color: rgba(99, 102, 241, 0.2);
+  color: #818cf8;
+  gap: 4px;
+}
+
+.key-btn.key-bio:active {
+  background: rgba(99, 102, 241, 0.2);
+}
+
+.bio-label {
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  color: #818cf8;
+}
+
+/* ─── Submit Button ──────────────────── */
+.submit-btn {
+  width: 100%;
+  padding: 16px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: white;
+  font-size: 16px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.1s;
+  letter-spacing: 0.3px;
+  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.35);
+}
+
+.submit-btn:active {
+  opacity: 0.85;
+  transform: scale(0.98);
+}
+
+/* ─── Spinner ────────────────────────── */
+.loading-indicator {
+  height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid rgba(99, 102, 241, 0.2);
+  border-top-color: #818cf8;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ─── Animation ──────────────────────── */
+.animate-fade-in {
+  animation: fadeIn 0.4s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}

@@ -15,12 +15,14 @@
 #define CHARACTERISTIC_UUID_SSID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
 #define CHARACTERISTIC_UUID_PASS "6b4122d2-8a9d-4952-b8d2-4309320257e5"
 
-const int relayPin = 27;
-const int ledPin = 2;
+const int relayPin = 27; // Door lock relay
+const int pumpPin  = 26; // Water pump relay
+const int ledPin   = 2;  // Built-in LED
 
 // Only 2 FirebaseData objects to save RAM
 FirebaseData streamFbdo;  // For command stream
-FirebaseData reqFbdo;     // For all reads & writes
+FirebaseData reqFbdo;     // For door check, heartbeat, writes
+FirebaseData pumpFbdo;    // For pump check (avoids collision with reqFbdo)
 FirebaseAuth auth;
 FirebaseConfig config;
 Preferences preferences;
@@ -28,8 +30,10 @@ Preferences preferences;
 bool isFirebaseReady = false;
 unsigned long lastHeartbeat = 0;
 unsigned long lastDoorCheck = 0;
-const unsigned long HEARTBEAT_INTERVAL = 30000;
-const unsigned long DOOR_CHECK_INTERVAL = 5000;
+unsigned long lastPumpCheck = 0;
+const unsigned long HEARTBEAT_INTERVAL = 15000;
+const unsigned long DOOR_CHECK_INTERVAL = 1000;
+const unsigned long PUMP_CHECK_INTERVAL = 5000;
 
 bool isSetupMode = false;
 bool shouldReboot = false;
@@ -98,6 +102,27 @@ void checkDoorStatus() {
       Firebase.RTDB.setString(&reqFbdo, "/door/status", "LOCKED");
       Serial.println("Door re-locked.");
     }
+  }
+}
+
+// ─── Pump Check ────────────────────────────────────────────
+void checkPumpStatus() {
+  if (!Firebase.ready()) return;
+
+  if (Firebase.RTDB.getString(&pumpFbdo, "/pump/status")) {
+    String val = pumpFbdo.stringData();
+    Serial.printf("[Pump] status = %s\n", val.c_str());
+    if (val == "ON") {
+      Serial.println(">>> PUMP ON!");
+      digitalWrite(pumpPin, LOW); // Activate relay
+      Firebase.RTDB.setString(&pumpFbdo, "/pump/status", "RUNNING");
+    } else if (val == "OFF") {
+      Serial.println(">>> PUMP OFF!");
+      digitalWrite(pumpPin, HIGH); // Deactivate relay
+      Firebase.RTDB.setString(&pumpFbdo, "/pump/status", "STOPPED");
+    }
+  } else {
+    Serial.printf("[Pump] read error: %s\n", pumpFbdo.errorReason().c_str());
   }
 }
 
@@ -205,7 +230,9 @@ void startSetupMode() {
 void setup() {
   Serial.begin(115200);
   pinMode(relayPin, OUTPUT);
-  digitalWrite(relayPin, HIGH);
+  digitalWrite(relayPin, HIGH); // HIGH = relay OFF (active-LOW)
+  pinMode(pumpPin, OUTPUT);
+  digitalWrite(pumpPin, HIGH);  // HIGH = relay OFF (active-LOW)
   pinMode(ledPin, OUTPUT);
   digitalWrite(ledPin, LOW);
 
@@ -309,13 +336,19 @@ void loop() {
 
   unsigned long now = millis();
 
-  // Check door status every 2 seconds (polling instead of 2nd stream)
+  // Check door status every 5s
   if (now - lastDoorCheck >= DOOR_CHECK_INTERVAL) {
     lastDoorCheck = now;
     checkDoorStatus();
   }
 
-  // Send heartbeat every 30 seconds
+  // Check pump status every 5s
+  if (now - lastPumpCheck >= PUMP_CHECK_INTERVAL) {
+    lastPumpCheck = now;
+    checkPumpStatus();
+  }
+
+  // Send heartbeat every 15 seconds
   if (now - lastHeartbeat >= HEARTBEAT_INTERVAL || lastHeartbeat == 0) {
     lastHeartbeat = now;
     sendHeartbeat();
