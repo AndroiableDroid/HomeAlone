@@ -44,3 +44,4 @@ __screenshots__/
 Thumbs.db
 
 */environments/environment.ts
+*/build_opt.h
