@@ -55,6 +55,7 @@ unsigned long lastPumpCheck = 0;
 const unsigned long HEARTBEAT_INTERVAL  = 15000;
 const unsigned long DOOR_CHECK_INTERVAL = 1000;
 const unsigned long PUMP_CHECK_INTERVAL = 5000;
+const unsigned long DOOR_RELOCK_DELAY_MS = 1000;
 
 bool isSetupMode = false;
 bool shouldReboot = false;
@@ -123,7 +124,7 @@ void flashLed(int times, int delayMs) {
 void unlockDoorAction() {
   Serial.println(">>> UNLOCKING...");
   digitalWrite(relayPin, LOW);
-  delay(2000);
+  delay(DOOR_RELOCK_DELAY_MS);
   digitalWrite(relayPin, HIGH);
   Serial.println(">>> LOCKED.");
 }
