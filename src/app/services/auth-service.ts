@@ -9,6 +9,10 @@ export class AuthService {
   private router: Router = inject(Router);
   
   user$: Observable<User | null> = user(this.auth);
+  
+  getCurrentUser(): User | null {
+    return this.auth.currentUser;
+  }
 
   constructor() {
     // Ensure persistence is set for mobile environments

@@ -187,25 +187,7 @@
 }
 
 /* ─── Submit Button ──────────────────── */
-.submit-btn {
-  width: 100%;
-  padding: 16px;
-  border-radius: 16px;
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
-  color: white;
-  font-size: 16px;
-  font-weight: 600;
-  border: none;
-  cursor: pointer;
-  transition: opacity 0.2s, transform 0.1s;
-  letter-spacing: 0.3px;
-  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.35);
-}
-
-.submit-btn:active {
-  opacity: 0.85;
-  transform: scale(0.98);
-}
+/* Submit Button removed - auto-verify handles it */
 
 /* ─── Spinner ────────────────────────── */
 .loading-indicator {

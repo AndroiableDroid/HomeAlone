@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { AuthService } from '../services/auth-service';
 import { LockService, DeviceStatus } from '../services/lock-service';
+import { LocalAuthService } from '../services/local-auth.service';
 import { Subscription } from 'rxjs';
 
 @Component({
@@ -15,6 +16,7 @@ import { Subscription } from 'rxjs';
 export class DashboardComponent implements OnInit, OnDestroy {
   private authService = inject(AuthService);
   private lockService = inject(LockService);
+  private localAuth = inject(LocalAuthService);
   private router = inject(Router);
   private authSubscription?: Subscription;
 
@@ -27,6 +29,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
   pumpError = '';
   resetMessage = '';
   isPumpOn = false;
+  isMenuOpen = false; // Sidebar state
 
   ngOnInit() {
     this.authSubscription = this.user$.subscribe(user => {
@@ -124,6 +127,18 @@ export class DashboardComponent implements OnInit, OnDestroy {
     if (rssi >= -65) return 'Good';
     if (rssi >= -75) return 'Fair';
     return 'Weak';
+  }
+
+  toggleMenu() {
+    this.isMenuOpen = !this.isMenuOpen;
+  }
+
+  async changePin() {
+    const confirmed = confirm('Do you want to change your PIN? This will clear your current PIN and take you to the setup screen.');
+    if (confirmed) {
+      await this.localAuth.clearPin();
+      this.router.navigate(['/pin-lock']);
+    }
   }
 }
 

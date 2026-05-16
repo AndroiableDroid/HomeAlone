@@ -1,6 +1,8 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject, NgZone } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
+import { App } from '@capacitor/app';
+import { PluginListenerHandle } from '@capacitor/core';
 import { LocalAuthService } from '../services/local-auth.service';
 
 type PinScreenMode = 'verify' | 'create' | 'confirm';
@@ -12,9 +14,12 @@ type PinScreenMode = 'verify' | 'create' | 'confirm';
   templateUrl: './pin-lock.html',
   styleUrls: ['./pin-lock.css'],
 })
-export class PinLockComponent implements OnInit {
+export class PinLockComponent implements OnInit, OnDestroy {
   private localAuth = inject(LocalAuthService);
   private router = inject(Router);
+  private ngZone = inject(NgZone);
+  private resumeListener?: PluginListenerHandle;
+  private lastAuthTime = 0; // Timestamp of last biometric attempt
 
   mode: PinScreenMode = 'verify';
   pin = '';
@@ -25,7 +30,7 @@ export class PinLockComponent implements OnInit {
   biometricType = 'biometric';
   isLoading = false;
 
-  readonly maxPinLength = 6;
+  maxPinLength = 4;
   readonly minPinLength = 4;
 
   get dots(): boolean[] {
@@ -51,9 +56,33 @@ export class PinLockComponent implements OnInit {
     const pinSet = await this.localAuth.isPinSet();
     this.mode = pinSet ? 'verify' : 'create';
 
-    // Auto-attempt biometric when verifying
+    if (pinSet) {
+      this.maxPinLength = await this.localAuth.getPinLength();
+    } else {
+      this.maxPinLength = 4; // Default for creation
+    }
+
+    // Auto-attempt biometric when verifying (initial load)
     if (pinSet && this.isBiometricAvailable) {
-      setTimeout(() => this.tryBiometric(), 400);
+      setTimeout(() => this.tryBiometric(), 800);
+    }
+
+    // Also re-trigger biometric when app returns to foreground (if already on screen)
+    this.resumeListener = await App.addListener('appStateChange', ({ isActive }) => {
+      console.log('PinLockComponent: App state changed, isActive:', isActive);
+      const now = Date.now();
+      // Only re-trigger if app became active AND we haven't tried recently (> 3s)
+      // This prevents the loop caused by the biometric dialog itself resuming the app
+      if (isActive && this.mode === 'verify' && this.isBiometricAvailable && (now - this.lastAuthTime > 3000)) {
+        console.log('PinLockComponent: Re-triggering biometric (cooldown passed)...');
+        setTimeout(() => this.tryBiometric(), 500);
+      }
+    });
+  }
+
+  ngOnDestroy() {
+    if (this.resumeListener) {
+      this.resumeListener.remove();
     }
   }
 
@@ -62,7 +91,7 @@ export class PinLockComponent implements OnInit {
     this.pin += key;
     this.errorMessage = '';
 
-    // Auto-submit when max length reached
+    // Auto-submit when length reached
     if (this.pin.length === this.maxPinLength) {
       setTimeout(() => this.submitPin(), 120);
     }
@@ -84,6 +113,7 @@ export class PinLockComponent implements OnInit {
 
     // ── Create mode: save first entry, switch to confirm ───
     if (this.mode === 'create') {
+      this.maxPinLength = this.pin.length; // Lock in the length they chose
       this.firstPin = this.pin;
       this.pin = '';
       this.mode = 'confirm';
@@ -103,7 +133,9 @@ export class PinLockComponent implements OnInit {
       }
       await this.localAuth.savePin(this.pin);
       this.isLoading = false;
-      this.router.navigate(['/dashboard']);
+      this.ngZone.run(() => {
+        this.router.navigate(['/dashboard']);
+      });
       return;
     }
 
@@ -111,7 +143,10 @@ export class PinLockComponent implements OnInit {
     const ok = await this.localAuth.verifyPin(this.pin);
     this.isLoading = false;
     if (ok) {
-      this.router.navigate(['/dashboard']);
+      this.localAuth.setJustUnlocked();
+      this.ngZone.run(() => {
+        this.router.navigate(['/dashboard']);
+      });
     } else {
       this.showError('Incorrect PIN. Try again.');
       this.pin = '';
@@ -119,10 +154,29 @@ export class PinLockComponent implements OnInit {
   }
 
   async tryBiometric() {
-    if (!this.isBiometricAvailable) return;
-    const ok = await this.localAuth.authenticateWithBiometric();
-    if (ok) {
-      this.router.navigate(['/dashboard']);
+    const now = Date.now();
+    if (!this.isBiometricAvailable || this.localAuth.getIsAuthenticating() || (now - this.lastAuthTime < 2000)) {
+      return;
+    }
+    
+    this.localAuth.setAuthenticating(true);
+    this.lastAuthTime = now;
+    try {
+      const ok = await this.localAuth.authenticateWithBiometric();
+      if (ok) {
+        console.log('Biometric auth successful, navigating...');
+        this.localAuth.setJustUnlocked();
+        this.ngZone.run(() => {
+          this.router.navigate(['/dashboard']);
+        });
+      }
+    } catch (err) {
+      console.error('Biometric error:', err);
+    } finally {
+      // Small delay before allowing another attempt, to let the UI settle
+      setTimeout(() => {
+        this.localAuth.setAuthenticating(false);
+      }, 1000);
     }
   }
 

@@ -9,6 +9,29 @@ const PIN_KEY = 'app_pin_hash';
 
 @Injectable({ providedIn: 'root' })
 export class LocalAuthService {
+  private justUnlocked = false;
+  private isAuthenticating = false;
+  private unlockTimeout: any;
+
+  setJustUnlocked() {
+    this.justUnlocked = true;
+    if (this.unlockTimeout) clearTimeout(this.unlockTimeout);
+    this.unlockTimeout = setTimeout(() => {
+      this.justUnlocked = false;
+    }, 5000); // 5 second grace period
+  }
+
+  isJustUnlocked(): boolean {
+    return this.justUnlocked;
+  }
+
+  setAuthenticating(val: boolean) {
+    this.isAuthenticating = val;
+  }
+
+  getIsAuthenticating(): boolean {
+    return this.isAuthenticating;
+  }
 
   // ── PIN Storage ─────────────────────────────────────────────────────────────
 
@@ -28,6 +51,12 @@ export class LocalAuthService {
   async savePin(pin: string): Promise<void> {
     const hash = await this.hashPin(pin);
     await Preferences.set({ key: PIN_KEY, value: hash });
+    await Preferences.set({ key: 'app_pin_length', value: pin.length.toString() });
+  }
+
+  async getPinLength(): Promise<number> {
+    const { value } = await Preferences.get({ key: 'app_pin_length' });
+    return value ? parseInt(value, 10) : 4; // Default to 4
   }
 
   async verifyPin(pin: string): Promise<boolean> {
