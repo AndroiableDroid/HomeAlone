@@ -6,29 +6,29 @@
 #include "addons/RTDBHelper.h"
 
 #ifdef __has_include
-#  if __has_include("build_opt.h")
-#    include "build_opt.h"
+#  if __has_include("secrets.h")
+#    include "secrets.h"
 #  endif
 #endif
 
 // Fallback: catch-fire errors if any secret is still missing
 #ifndef API_KEY
-#  error "API_KEY not defined. Create build_opt.h with your secrets."
+#  error "API_KEY not defined. Create secrets.h with your secrets."
 #endif
 #ifndef DATABASE_URL
-#  error "DATABASE_URL not defined. Create build_opt.h with your secrets."
+#  error "DATABASE_URL not defined. Create secrets.h with your secrets."
 #endif
 #ifndef USER_EMAIL
-#  error "USER_EMAIL not defined. Create build_opt.h with your secrets."
+#  error "USER_EMAIL not defined. Create secrets.h with your secrets."
 #endif
 #ifndef USER_PASSWORD
-#  error "USER_PASSWORD not defined. Create build_opt.h with your secrets."
+#  error "USER_PASSWORD not defined. Create secrets.h with your secrets."
 #endif
 #ifndef BLE_AUTH_TOKEN
-#  error "BLE_AUTH_TOKEN not defined. Create build_opt.h with your secrets."
+#  error "BLE_AUTH_TOKEN not defined. Create secrets.h with your secrets."
 #endif
 #ifndef BLE_PIN
-#  error "BLE_PIN not defined. Create build_opt.h with your secrets."
+#  error "BLE_PIN not defined. Create secrets.h with your secrets."
 #endif
 
 // UUIDs for BLE Service and Characteristics
@@ -66,7 +66,7 @@ bool isBleOnly = false;
 // ─── SECURITY OPTION 2: App-level token auth ───────────────
 // Loaded from Preferences at boot; fallback default shown here.
 // Change via Firebase: write new token to /device/ble_token
-String bleAuthToken = "change_me_123";  // overwritten at boot
+String bleAuthToken = BLE_AUTH_TOKEN;  // fallback from secrets.h
 bool bleSessionAuthorized = false;
 
 // ─── SECURITY OPTION 3: MAC whitelist ──────────────────────
@@ -364,9 +364,9 @@ class PassCallbacks : public NimBLECharacteristicCallbacks {
 
 void startBleServer() {
   // ── OPTION 1: NimBLE passkey (MITM + Secure Connections) ─
-  // Load PIN from Preferences, fallback to 123456
+  // Load PIN from Preferences, fallback to BLE_PIN
   preferences.begin("ble-auth", true);
-  int blePin = preferences.getInt("pin", 123456);
+  int blePin = preferences.getInt("pin", BLE_PIN);
   preferences.end();
 
   NimBLEDevice::setSecurityAuth(BLE_SM_PAIR_AUTHREQ_MITM | BLE_SM_PAIR_AUTHREQ_SC);
@@ -442,7 +442,7 @@ void setup() {
 
   // ── Load BLE auth token (OPTION 2) ────────────────────
   preferences.begin("ble-auth", true);
-  bleAuthToken = preferences.getString("token", "change_me_123");
+  bleAuthToken = preferences.getString("token", BLE_AUTH_TOKEN);
   preferences.end();
   Serial.println("[Security] BLE auth token loaded.");
 
