@@ -22,7 +22,28 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- Custom deep link scheme for home screen widgets -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="smartlock" />
+            </intent-filter>
+
         </activity>
+
+        <!-- Smart Lock Home Screen Widget Provider -->
+        <receiver
+            android:name=".SmartLockWidgetProvider"
+            android:exported="true"
+            android:label="Smart Lock Widget">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/smart_lock_widget_info" />
+        </receiver>
 
         <provider
             android:name="androidx.core.content.FileProvider"

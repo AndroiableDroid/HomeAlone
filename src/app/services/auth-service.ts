@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
-import { Auth, signInWithEmailAndPassword, signOut, user, User, setPersistence, indexedDBLocalPersistence } from '@angular/fire/auth';
+import { Auth, signInWithEmailAndPassword, signOut, user, User } from '@angular/fire/auth';
 import { Router } from '@angular/router';
-import { Observable, from } from 'rxjs';
+import { Observable } from 'rxjs';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
@@ -14,12 +14,7 @@ export class AuthService {
     return this.auth.currentUser;
   }
 
-  constructor() {
-    // Ensure persistence is set for mobile environments
-    from(setPersistence(this.auth, indexedDBLocalPersistence)).subscribe({
-      error: (err) => console.error('Persistence error', err)
-    });
-  }
+  constructor() {}
 
   async login(email: string, pass: string) {
     try {

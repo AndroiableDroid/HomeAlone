@@ -24,6 +24,27 @@ export class AppComponent implements OnInit {
     console.log('AppComponent initialized');
     await this.localAuth.init();
     await this.bleControl.init();
+
+    // Listen for widget deep-link shortcuts
+    App.addListener('appUrlOpen', (event: any) => {
+      this.ngZone.run(() => {
+        console.log('App opened with URL:', event.url);
+        const url = event.url || '';
+        if (url.includes('smartlock://unlock') || url.includes('smartlock://pump')) {
+          this.localAuth.setJustUnlocked();
+          const trigger = url.includes('smartlock://unlock') ? 'unlock' : 'pump';
+          
+          // Defer navigation to allow Angular to fully bootstrap, preventing TDZ ReferenceErrors
+          setTimeout(() => {
+            this.ngZone.run(() => {
+              console.log(`[DeepLink] Safe-routing to dashboard with trigger: ${trigger}`);
+              this.router.navigate(['/dashboard'], { queryParams: { trigger, t: Date.now() } });
+            });
+          }, 300);
+        }
+      });
+    });
+
     // Listen for app state changes (background/foreground)
     App.addListener('appStateChange', async ({ isActive }) => {
       console.log('App state changed, isActive:', isActive);

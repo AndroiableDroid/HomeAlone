@@ -130,17 +130,17 @@
           </svg>
         </div>
         <div class="status-content">
-          <h3>{{ status.isLocal ? 'Local Control' : 'Smart Lock' }}</h3>
+          <h3>{{ status.isLocal ? 'Local BLE Control' : 'Smart Lock Link' }}</h3>
           <p>
             <ng-container *ngIf="status.isLocal; else cloudStatus">
-              {{ status.online ? 'Bluetooth Connected' : 'Tap to connect to device...' }}
+              {{ status.online ? 'Bluetooth connection established and secure' : 'BLE disconnected. Tap to connect to lock...' }}
             </ng-container>
             <ng-template #cloudStatus>
               <ng-container *ngIf="status.online; else offlineStatus">
-                WiFi: {{ getRssiStrength(status.rssi!) }} ({{ status.rssi }}dBm) &nbsp;·&nbsp; Up {{ formatUptime(status.uptime!) }}
+                WiFi Signal: {{ getRssiStrength(status.rssi!) }} ({{ status.rssi }}dBm) &nbsp;·&nbsp; Live Uptime: {{ formatUptime(status.uptime!) }}
               </ng-container>
               <ng-template #offlineStatus>
-                Last seen {{ formatLastSeen(status.lastSeen!, status.serverTimeOffset) }}
+                ESP32 Offline &nbsp;·&nbsp; Last active {{ formatLastSeen(status.lastSeen!, status.serverTimeOffset) }}
               </ng-template>
             </ng-template>
           </p>
@@ -157,118 +157,205 @@
       <div class="glass-card status-card">
         <div class="status-icon"><div class="status-skeleton-icon"></div></div>
         <div class="status-content">
-          <h3>Checking device...</h3>
-          <p>Fetching status from Firebase</p>
+          <h3>Syncing device telemetry...</h3>
+          <p>Querying Firebase Realtime database state</p>
         </div>
         <div class="status-badge"><span class="status-dot dot-loading"></span>Loading</div>
       </div>
     }
   </section>
 
-  <section class="appliances-grid animate-fade-in">
-    <!-- Smart Lock Card -->
-    <div class="glass-card appliance-card" [class.active]="isUnlocking">
-      <div class="appliance-header">
-        <div class="appliance-icon lock-icon" [class.unlocked]="isUnlocking">
-          @if (!isUnlocking) {
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-            </svg>
-          }
-          @if (isUnlocking) {
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-              <path d="M7 11V7a5 5 0 0 1 9.9-1" />
-            </svg>
-          }
+  <!-- Widgets Master Container -->
+  <div class="widgets-container animate-fade-in">
+    <!-- Primary Widgets Row -->
+    <div class="widgets-grid">
+      
+      <!-- WIDGET 1: Slide to Unlock Front Door -->
+      <div class="glass-card widget-card door-widget" [class.unlocked]="isUnlocking">
+        <div class="widget-header">
+          <div class="widget-icon lock-icon" [class.unlocked]="isUnlocking">
+            @if (!isUnlocking) {
+              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+            }
+            @if (isUnlocking) {
+              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0 1 9.9-1" />
+              </svg>
+            }
+          </div>
+          <span class="widget-badge" [class.active]="isUnlocking">{{ isUnlocking ? 'OPEN' : 'LOCKED' }}</span>
         </div>
-        <div class="appliance-toggle">
-          <button class="control-btn" (click)="unlockDoor()" [disabled]="isUnlocking">
-            {{ isUnlocking ? 'Unlocking...' : 'Unlock' }}
-          </button>
+        
+        <div class="widget-body">
+          <h4>Front Door</h4>
+          <p class="widget-subtitle">{{ isUnlocking ? 'Lock released (3s duration)' : 'Securely locked & armed' }}</p>
+          
+          <!-- Slide Controller -->
+          <div class="slider-wrapper" *ngIf="!isUnlocking">
+            <div class="slider-track" [style.background]="'linear-gradient(90deg, rgba(99, 102, 241, 0.25) ' + slideProgress + '%, rgba(255, 255, 255, 0.04) ' + slideProgress + '%)'">
+              <span class="slider-label" [style.opacity]="(100 - slideProgress * 1.5) / 100">Slide to Unlock Door</span>
+              <input 
+                type="range" 
+                min="0" 
+                max="100" 
+                [value]="slideProgress" 
+                (input)="onSlideChange($event)" 
+                (change)="onSlideChange($event)" 
+                (mouseup)="onSlideRelease()" 
+                (touchend)="onSlideRelease()" 
+                class="slider-input" />
+              <div class="slider-thumb" [style.left.%]="slideProgress * 0.82">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+              </div>
+            </div>
+          </div>
+
+          <!-- Unlocking Spinner Screen -->
+          <div class="unlocking-spinner-container animate-fade-in" *ngIf="isUnlocking">
+            <div class="unlock-spinner"></div>
+            <span class="pulse-text">Front Door Unlocking...</span>
+          </div>
         </div>
       </div>
-      <div class="appliance-body">
-        <h4>Front Door</h4>
-        <p>{{ isUnlocking ? 'Temporarily Unlocked' : 'Locked' }}</p>
-      </div>
+
+      <!-- WIDGET 2: Circular Swirling Water Pump -->
+      @if (pump$ | async; as pumpStatus) {
+        <div class="glass-card widget-card pump-widget" [class.active]="pumpStatus === 'RUNNING' || pumpStatus === 'ON'">
+          <div class="widget-header">
+            <div class="widget-icon pump-icon" [class.active]="pumpStatus === 'RUNNING' || pumpStatus === 'ON'">
+              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" />
+              </svg>
+            </div>
+            <span class="widget-badge pump-badge" [class.active]="pumpStatus === 'RUNNING' || pumpStatus === 'ON'">
+              {{ pumpStatus === 'RUNNING' ? 'RUNNING' : pumpStatus === 'ON' ? 'STARTING' : 'STOPPED' }}
+            </span>
+          </div>
+
+          <div class="widget-body flex-layout">
+            <div class="pump-details-container">
+              <h4>Water Pump</h4>
+              <p class="widget-subtitle">
+                {{ (pumpStatus === 'RUNNING' || pumpStatus === 'ON') ? 'Liquid motor engaged' : 'System idle' }}
+              </p>
+              
+              <button 
+                class="widget-action-btn"
+                [class.btn-active]="pumpStatus === 'RUNNING' || pumpStatus === 'ON'"
+                [disabled]="isPumpToggling"
+                (click)="togglePump(pumpStatus)">
+                {{ isPumpToggling ? '...' : (pumpStatus === 'RUNNING' || pumpStatus === 'ON') ? 'Turn Off' : 'Turn On' }}
+              </button>
+            </div>
+
+            <!-- Wave swirl visual element -->
+            <div class="circular-swirl-container">
+              <div class="circular-swirl-outer" [class.running]="pumpStatus === 'RUNNING' || pumpStatus === 'ON'">
+                <div class="wave-swirl-liquid" [style.height.%]="(pumpStatus === 'RUNNING' || pumpStatus === 'ON') ? 68 : 12">
+                  <svg class="wave-svg" viewBox="0 0 120 28" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M0,15 C30,5 90,25 120,15 L120,28 L0,28 Z" fill="#38BDF8" opacity="0.6"/>
+                    <path d="M0,15 C45,25 75,5 120,15 L120,28 L0,28 Z" fill="#0EA5E9"/>
+                  </svg>
+                </div>
+                <div class="timer-display" *ngIf="pumpStatus === 'RUNNING' || pumpStatus === 'ON'">
+                  {{ formatPumpTime() }}
+                </div>
+              </div>
+            </div>
+          </div>
+          @if (pumpError) {
+            <p class="pump-err-txt">{{ pumpError }}</p>
+          }
+        </div>
+      }
     </div>
 
-    <!-- Water Pump Card -->
-    @if (pump$ | async; as pumpStatus) {
-      <div
-        class="glass-card appliance-card"
-        [class.active]="pumpStatus === 'RUNNING' || pumpStatus === 'ON'"
-      >
-        <div class="appliance-header">
-          <div
-            class="appliance-icon pump-icon"
-            [class.pump-active]="pumpStatus === 'RUNNING' || pumpStatus === 'ON'"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" />
+    <!-- Secondary Widgets Row -->
+    <div class="widgets-grid secondary-grid">
+      
+      <!-- WIDGET 3: Live System Diagnostics -->
+      <div class="glass-card widget-card diagnostics-widget">
+        <div class="widget-header">
+          <div class="widget-icon telemetry-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="20" x2="18" y2="10"/>
+              <line x1="12" y1="20" x2="12" y2="4"/>
+              <line x1="6" y1="20" x2="6" y2="14"/>
             </svg>
           </div>
-          <div class="appliance-toggle">
-            <button
-              class="control-btn pump-btn"
-              [class.pump-btn-off]="pumpStatus === 'RUNNING' || pumpStatus === 'ON'"
-              [disabled]="isPumpToggling"
-              (click)="togglePump(pumpStatus)"
-            >
-              {{
-                isPumpToggling
-                  ? '...'
-                  : pumpStatus === 'RUNNING' || pumpStatus === 'ON'
-                    ? 'Turn Off'
-                    : 'Turn On'
-              }}
-            </button>
-          </div>
+          <span class="diagnostics-title">SYSTEM TELEMETRY</span>
         </div>
-        <div class="appliance-body">
-          <h4>Water Pump</h4>
-          <p>
-            {{
-              pumpStatus === 'RUNNING' ? 'Running' : pumpStatus === 'ON' ? 'Starting...' : 'Stopped'
-            }}
-          </p>
-          @if (pumpError) {
-            <p style="color: #f87171; font-size: 11px; margin-top: 4px">{{ pumpError }}</p>
+
+        <div class="widget-body">
+          @if (deviceStatus$ | async; as status) {
+            <div class="metrics-grid">
+              <div class="metric-item">
+                <span class="metric-label">Network Mode</span>
+                <span class="metric-value font-highlight">{{ status.isLocal ? 'Local BLE' : 'Cloud Link' }}</span>
+              </div>
+              <div class="metric-item">
+                <span class="metric-label">Signal Quality</span>
+                <span class="metric-value signal-strength">
+                  <span class="signal-bars">
+                    <span class="bar" [class.fill]="status.rssi! >= -90 || status.isLocal"></span>
+                    <span class="bar" [class.fill]="status.rssi! >= -75 || status.isLocal"></span>
+                    <span class="bar" [class.fill]="status.rssi! >= -65 || status.isLocal"></span>
+                    <span class="bar" [class.fill]="status.rssi! >= -50 || status.isLocal"></span>
+                  </span>
+                  {{ status.isLocal ? 'Excellent' : getRssiStrength(status.rssi!) }}
+                </span>
+              </div>
+              <div class="metric-item">
+                <span class="metric-label">IP Address</span>
+                <span class="metric-value select-all">{{ status.ip || 'Local Bluetooth' }}</span>
+              </div>
+              <div class="metric-item">
+                <span class="metric-label">Uptime</span>
+                <span class="metric-value">{{ status.isLocal ? 'N/A' : formatUptime(status.uptime!) }}</span>
+              </div>
+            </div>
+          } @else {
+            <div class="shimmer-container">
+              <div class="shimmer-line"></div>
+              <div class="shimmer-line"></div>
+              <div class="shimmer-line"></div>
+            </div>
           }
         </div>
       </div>
-    }
-  </section>
+
+      <!-- WIDGET 4: Live Activity Logger Feed -->
+      <div class="glass-card widget-card logs-widget">
+        <div class="widget-header">
+          <div class="widget-icon history-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+          </div>
+          <span class="diagnostics-title">ACTIVITY MONITOR</span>
+          <span class="logs-count-badge">{{ activityLogs.length }}</span>
+        </div>
+
+        <div class="widget-body">
+          <div class="logs-feed-container">
+            <div class="log-row" *ngFor="let log of activityLogs" [class.log-success]="log.type === 'success'" [class.log-warning]="log.type === 'warning'">
+              <span class="log-dot"></span>
+              <div class="log-content">
+                <span class="log-text">{{ log.text }}</span>
+                <span class="log-time">{{ log.time | date:'h:mm:ss a' }}</span>
+              </div>
+            </div>
+            <div class="logs-empty-state" *ngIf="activityLogs.length === 0">
+              <p>Establishing console log listener...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
 </div>

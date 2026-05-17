@@ -215,7 +215,7 @@ export class BleControlService {
       await this.writeRaw(token);
       this.isAuthorized = true;
       // Small delay for ESP32 to process auth before command
-      await new Promise(r => setTimeout(r, 300));
+      await new Promise(resolve => setTimeout(resolve, 300));
     }
 
     await this.writeRaw(cmd);
