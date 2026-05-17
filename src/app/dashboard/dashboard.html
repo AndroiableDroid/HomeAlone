@@ -31,6 +31,34 @@
     
     <nav class="sidebar-nav">
       <div class="nav-group">
+        <span class="group-title">Connection Mode</span>
+        <button class="mode-toggle-btn" [class.active]="connectionMode === 'cloud'" (click)="switchConnectionMode('cloud')">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19c.6 0 1.1-.4 1.1-1 0-.6-.5-1.1-1.1-1.1a1.1 1.1 0 0 0-1.1 1.1c0 .6.5 1 1.1 1zM22 10.6c0-4.4-3.6-8-8-8s-8 3.6-8 8c0 3.3 2 6.1 4.8 7.3V21h6.4v-3.1c2.8-1.2 4.8-4 4.8-7.3z"/></svg>
+          <span>Cloud (WiFi)</span>
+          <div class="active-dot" *ngIf="connectionMode === 'cloud'"></div>
+        </button>
+        <button class="mode-toggle-btn" [class.active]="connectionMode === 'local'" (click)="switchConnectionMode('local')">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 7 10 10-5 5V2l5 5L7 17"/></svg>
+          <span>Local (BLE)</span>
+          <div class="active-dot" *ngIf="connectionMode === 'local'"></div>
+        </button>
+      </div>
+
+      <div class="nav-group">
+        <span class="group-title">BLE Security</span>
+        <div class="settings-input-group">
+          <label>Pairing PIN (6-digit)</label>
+          <input type="text" [value]="blePin" (change)="updateBlePin($event)" maxlength="6" placeholder="123456">
+          <small>Required for OS pairing dialog</small>
+        </div>
+        <div class="settings-input-group">
+          <label>Auth Token</label>
+          <input type="text" [value]="bleToken" (change)="updateBleToken($event)" placeholder="Secret token">
+          <small>Required for app-level handshake</small>
+        </div>
+      </div>
+
+      <div class="nav-group">
         <span class="group-title">Security</span>
         <button class="nav-link" (click)="changePin()">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
@@ -87,54 +115,37 @@
         [class.device-online]="status.online"
         [class.device-offline]="!status.online"
       >
-        <div class="status-icon">
-          @if (status.online) {
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="32"
-              height="32"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
+        <div class="status-icon" [class.local-mode]="status.isLocal">
+          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <ng-container *ngIf="!status.isLocal; else bleIcon">
               <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-            </svg>
-          }
-          @if (!status.online) {
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="32"
-              height="32"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-              <line x1="2" y1="2" x2="22" y2="22" />
-            </svg>
-          }
+              <line *ngIf="!status.online" x1="2" y1="2" x2="22" y2="22" />
+            </ng-container>
+            <ng-template #bleIcon>
+              <path d="m7 7 10 10-5 5V2l5 5L7 17"/>
+            </ng-template>
+          </svg>
         </div>
         <div class="status-content">
-          <h3>Smart Lock {{ status.online ? 'Online' : 'Offline' }}</h3>
-          @if (status.online) {
-            <p>
-              WiFi: {{ getRssiStrength(status.rssi!) }} ({{ status.rssi }}dBm) &nbsp;·&nbsp; Up
-              {{ formatUptime(status.uptime!) }}
-            </p>
-          }
-          @if (!status.online) {
-            <p>Last seen {{ formatLastSeen(status.lastSeen!, status.serverTimeOffset) }}</p>
-          }
+          <h3>{{ status.isLocal ? 'Local Control' : 'Smart Lock' }}</h3>
+          <p>
+            <ng-container *ngIf="status.isLocal; else cloudStatus">
+              {{ status.online ? 'Bluetooth Connected' : 'Searching for device...' }}
+            </ng-container>
+            <ng-template #cloudStatus>
+              <ng-container *ngIf="status.online; else offlineStatus">
+                WiFi: {{ getRssiStrength(status.rssi!) }} ({{ status.rssi }}dBm) &nbsp;·&nbsp; Up {{ formatUptime(status.uptime!) }}
+              </ng-container>
+              <ng-template #offlineStatus>
+                Last seen {{ formatLastSeen(status.lastSeen!, status.serverTimeOffset) }}
+              </ng-template>
+            </ng-template>
+          </p>
         </div>
-        <div class="status-badge" [class.badge-offline]="!status.online">
+        <div class="status-badge" [class.badge-offline]="!status.online" [class.badge-local]="status.isLocal">
           <span class="status-dot" [class.dot-offline]="!status.online"></span>
-          {{ status.online ? 'Connected' : 'Offline' }}
+          {{ status.online ? (status.isLocal ? 'BLE' : 'Cloud') : 'Offline' }}
         </div>
       </div>
     }

@@ -30,13 +30,21 @@ export class DashboardComponent implements OnInit, OnDestroy {
   resetMessage = '';
   isPumpOn = false;
   isMenuOpen = false; // Sidebar state
+  connectionMode: 'cloud' | 'local' = 'cloud';
 
   ngOnInit() {
+    this.connectionMode = this.localAuth.getConnectionMode();
+    
     this.authSubscription = this.user$.subscribe(user => {
       if (!user) {
         this.router.navigate(['/login']);
       }
     });
+
+    if (this.connectionMode === 'local') {
+      // Small delay to ensure BLE is ready
+      setTimeout(() => this.lockService.triggerUnlock().catch(() => {}), 1000);
+    }
   }
 
   ngOnDestroy() {
@@ -140,6 +148,25 @@ export class DashboardComponent implements OnInit, OnDestroy {
       this.router.navigate(['/pin-lock']);
     }
   }
+
+  async switchConnectionMode(mode: 'cloud' | 'local') {
+    this.connectionMode = mode;
+    await this.lockService.setConnectionMode(mode);
+    this.isMenuOpen = false;
+  }
+
+  updateBleToken(event: any) {
+    const token = event.target.value;
+    if (token) this.localAuth.setBleAuthToken(token);
+  }
+
+  updateBlePin(event: any) {
+    const pin = event.target.value;
+    if (pin) this.localAuth.setBlePin(pin);
+  }
+
+  get bleToken() { return this.localAuth.getBleAuthToken(); }
+  get blePin() { return this.localAuth.getBlePin(); }
 }
 
 

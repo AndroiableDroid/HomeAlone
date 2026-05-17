@@ -270,6 +270,91 @@
   margin-bottom: 4px;
 }
 
+.mode-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 12px;
+  transition: all 0.3s;
+  margin-bottom: 8px;
+  position: relative;
+}
+
+.mode-toggle-btn.active {
+  background: rgba(99, 102, 241, 0.1);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+.active-dot {
+  position: absolute;
+  right: 12px;
+  width: 6px;
+  height: 6px;
+  background: var(--primary);
+  border-radius: 50%;
+  box-shadow: 0 0 8px var(--primary-glow);
+}
+
+.status-icon.local-mode {
+  background: rgba(56, 189, 248, 0.1);
+  color: #0ea5e9;
+}
+
+.badge-local {
+  background: rgba(56, 189, 248, 0.1) !important;
+  color: #0ea5e9 !important;
+  border: 1px solid rgba(56, 189, 248, 0.2);
+}
+
+.badge-local .status-dot {
+  background: #0ea5e9;
+  box-shadow: 0 0 6px #0ea5e9;
+}
+
+.settings-input-group {
+  padding: 0 16px;
+  margin-bottom: 20px;
+}
+
+.settings-input-group label {
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.settings-input-group input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 10px 14px;
+  color: #fff;
+  font-size: 14px;
+  transition: all 0.3s;
+}
+
+.settings-input-group input:focus {
+  outline: none;
+  border-color: var(--primary);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.settings-input-group small {
+  display: block;
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  opacity: 0.7;
+}
+
 .status-content p {
   font-size: 13px;
   color: var(--text-muted);

@@ -4,6 +4,7 @@ import {
   BiometricAuth,
   BiometryType,
 } from '@aparajita/capacitor-biometric-auth';
+import { environment } from '../../environments/environment';
 
 const PIN_KEY = 'app_pin_hash';
 
@@ -12,6 +13,47 @@ export class LocalAuthService {
   private justUnlocked = false;
   private isAuthenticating = false;
   private unlockTimeout: any;
+  private connectionMode: 'cloud' | 'local' = 'cloud'; // Default to cloud
+  private bleAuthToken = environment.bleAuthToken; 
+  private blePin = environment.blePin; 
+
+  async init() {
+    const { value: mode } = await Preferences.get({ key: 'app_connection_mode' });
+    this.connectionMode = (mode as 'cloud' | 'local') || 'cloud';
+
+    const { value: token } = await Preferences.get({ key: 'app_ble_auth_token' });
+    if (token) this.bleAuthToken = token;
+
+    const { value: pin } = await Preferences.get({ key: 'app_ble_pin' });
+    if (pin) this.blePin = pin;
+  }
+
+  getConnectionMode(): 'cloud' | 'local' {
+    return this.connectionMode;
+  }
+
+  async setConnectionMode(mode: 'cloud' | 'local') {
+    this.connectionMode = mode;
+    await Preferences.set({ key: 'app_connection_mode', value: mode });
+  }
+
+  getBleAuthToken(): string {
+    return this.bleAuthToken;
+  }
+
+  async setBleAuthToken(token: string) {
+    this.bleAuthToken = token;
+    await Preferences.set({ key: 'app_ble_auth_token', value: token });
+  }
+
+  getBlePin(): string {
+    return this.blePin;
+  }
+
+  async setBlePin(pin: string) {
+    this.blePin = pin;
+    await Preferences.set({ key: 'app_ble_pin', value: pin });
+  }
 
   setJustUnlocked() {
     this.justUnlocked = true;

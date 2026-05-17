@@ -1,9 +1,12 @@
 import { Injectable, inject } from '@angular/core';
 import { Database, ref, set, object } from '@angular/fire/database';
-import { Observable, map, combineLatest, timer, startWith } from 'rxjs';
+import { Observable, map, combineLatest, timer, startWith, of } from 'rxjs';
+import { LocalAuthService } from './local-auth.service';
+import { BleControlService } from './ble-control.service';
 
 export interface DeviceStatus {
   online: boolean;
+  isLocal?: boolean;
   ip?: string;
   rssi?: number;
   uptime?: number;
@@ -14,19 +17,39 @@ export interface DeviceStatus {
 @Injectable({ providedIn: 'root' })
 export class LockService {
   private db: Database = inject(Database);
+  private localAuth = inject(LocalAuthService);
+  private bleControl = inject(BleControlService);
 
-  triggerUnlock() {
+  async triggerUnlock() {
+    if (this.localAuth.getConnectionMode() === 'local') {
+      return this.bleControl.sendCommand('UNLOCK');
+    }
     const doorRef = ref(this.db, 'door/status');
     return set(doorRef, 'UNLOCKED');
   }
 
-  resetWifi() {
+  async setPump(state: 'ON' | 'OFF') {
+    if (this.localAuth.getConnectionMode() === 'local') {
+      return this.bleControl.sendCommand(state === 'ON' ? 'PUMP_ON' : 'PUMP_OFF');
+    }
+    return set(ref(this.db, 'pump/status'), state);
+  }
+
+  async resetWifi() {
     const cmdRef = ref(this.db, 'device/command');
     return set(cmdRef, 'RESET_WIFI');
   }
 
-  setPump(state: 'ON' | 'OFF') {
-    return set(ref(this.db, 'pump/status'), state);
+  async setConnectionMode(mode: 'cloud' | 'local') {
+    // Tell ESP32 to switch mode if connected via BLE
+    if (this.localAuth.getConnectionMode() === 'local' || mode === 'local') {
+      try {
+        await this.bleControl.sendCommand(mode === 'local' ? 'MODE_BLE' : 'MODE_WIFI');
+      } catch (e) {
+        console.warn('Could not send mode change command to ESP32 via BLE', e);
+      }
+    }
+    await this.localAuth.setConnectionMode(mode);
   }
 
   getPumpStatus(): Observable<string> {
@@ -49,8 +72,17 @@ export class LockService {
     );
 
     // Combine with a timer to force re-evaluation of 'isStale' every 5 seconds
-    return combineLatest([statusData$, offset$, timer(0, 5000)]).pipe(
-      map(([val, offset]) => {
+    return combineLatest([statusData$, offset$, timer(0, 5000), this.bleControl.getConnectedDevice()]).pipe(
+      map(([val, offset, _, bleDevice]) => {
+        if (this.localAuth.getConnectionMode() === 'local') {
+          return {
+            online: !!bleDevice,
+            isLocal: true,
+            rssi: -50, // Static for local
+            uptime: 0
+          };
+        }
+
         if (!val) return { online: false };
 
         const serverNow = Date.now() + offset;
