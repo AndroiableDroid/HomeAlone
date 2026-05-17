@@ -88,7 +88,8 @@ export class WifiSetupComponent implements OnInit, OnDestroy {
       // Fallback: native OS BLE picker (always works for permissions)
       try {
         const device = await BleClient.requestDevice({
-          namePrefix: 'SmartLock'
+          namePrefix: 'SmartLock',
+          optionalServices: [SERVICE_UUID]
         });
         if (device) {
           this.ngZone.run(() => {
@@ -153,7 +154,8 @@ export class WifiSetupComponent implements OnInit, OnDestroy {
         this.connectedDevice.deviceId,
         SERVICE_UUID,
         CHARACTERISTIC_UUID_SSID,
-        textToDataView(this.ssid)
+        textToDataView(this.ssid),
+        { timeout: 30000 }
       );
 
       // Small delay to let the ESP32 process
@@ -164,7 +166,8 @@ export class WifiSetupComponent implements OnInit, OnDestroy {
         this.connectedDevice.deviceId,
         SERVICE_UUID,
         CHARACTERISTIC_UUID_PASS,
-        textToDataView(this.password)
+        textToDataView(this.password),
+        { timeout: 30000 }
       );
 
       // Disconnect gracefully (may fail since ESP32 reboots)

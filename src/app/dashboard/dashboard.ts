@@ -4,6 +4,7 @@ import { Router } from '@angular/router';
 import { AuthService } from '../services/auth-service';
 import { LockService, DeviceStatus } from '../services/lock-service';
 import { LocalAuthService } from '../services/local-auth.service';
+import { BleControlService } from '../services/ble-control.service';
 import { Subscription } from 'rxjs';
 
 @Component({
@@ -17,6 +18,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
   private authService = inject(AuthService);
   private lockService = inject(LockService);
   private localAuth = inject(LocalAuthService);
+  private bleControl = inject(BleControlService);
   private router = inject(Router);
   private authSubscription?: Subscription;
 
@@ -42,8 +44,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
     });
 
     if (this.connectionMode === 'local') {
-      // Small delay to ensure BLE is ready
-      setTimeout(() => this.lockService.triggerUnlock().catch(() => {}), 1000);
+      // Open the native BLE device picker so user can select SmartLock-BLE
+      setTimeout(() => this.bleControl.connect().catch(() => {}), 500);
     }
   }
 
