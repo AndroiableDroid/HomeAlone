@@ -16,11 +16,50 @@ export class BleControlService {
   private isConnecting = false;
   private isAuthorized = false;
   private initialized = false;
+  private reconnectInterval: any;
+
+  constructor() {
+    this.localAuth.getConnectionMode$().subscribe(mode => {
+      this.ngZone.run(() => {
+        if (mode === 'local') {
+          console.log('[BLE] Connection mode is local. Starting background auto-connect...');
+          this.connect(false).catch(() => {});
+          this.startReconnectLoop();
+        } else {
+          console.log('[BLE] Connection mode is cloud. Stopping background reconnect...');
+          this.stopReconnectLoop();
+          if (this.connectedDevice$.value) {
+            const dev = this.connectedDevice$.value;
+            this.connectedDevice$.next(null);
+            this.isAuthorized = false;
+            BleClient.disconnect(dev.deviceId).catch(() => {});
+          }
+        }
+      });
+    });
+  }
+
+  private startReconnectLoop() {
+    if (this.reconnectInterval) clearInterval(this.reconnectInterval);
+    this.reconnectInterval = setInterval(() => {
+      if (this.localAuth.getConnectionMode() === 'local' && !this.connectedDevice$.value && !this.isConnecting) {
+        console.log('[BLE] Background reconnect loop checking...');
+        this.connect(false).catch(() => {});
+      }
+    }, 6000); // Check every 6 seconds
+  }
+
+  private stopReconnectLoop() {
+    if (this.reconnectInterval) {
+      clearInterval(this.reconnectInterval);
+      this.reconnectInterval = null;
+    }
+  }
 
   async init() {
     if (this.initialized) return;
     try {
-      await BleClient.initialize();
+      await BleClient.initialize({ androidNeverForLocation: true });
       this.initialized = true;
     } catch (e) {
       console.error('BLE Client init failed', e);
