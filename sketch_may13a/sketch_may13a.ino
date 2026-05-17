@@ -309,6 +309,10 @@ class ServerCallbacks : public NimBLEServerCallbacks {
 #endif
 
     digitalWrite(ledPin, HIGH);
+
+    // Force the client (smartphone) to initiate pairing/encryption immediately.
+    // This solves the issue where Android/Windows fails to show the PIN dialog on write.
+    NimBLEDevice::startSecurity(connInfo.getConnHandle());
   }
 
   void onDisconnect(NimBLEServer *pServer, NimBLEConnInfo &connInfo, int reason) {
@@ -369,13 +373,16 @@ void startBleServer() {
   int blePin = preferences.getInt("pin", BLE_PIN);
   preferences.end();
 
-  NimBLEDevice::setSecurityAuth(BLE_SM_PAIR_AUTHREQ_MITM | BLE_SM_PAIR_AUTHREQ_SC);
+  // init() MUST come first — it starts the NimBLE stack.
+  // Security settings applied after init() stick; before init() they get wiped.
+  NimBLEDevice::init("SmartLock-BLE");
+  NimBLEDevice::setPower(ESP_PWR_LVL_P9);
+
+  // Enable Bonding, MITM (requires PIN), and Secure Connections
+  NimBLEDevice::setSecurityAuth(true, true, true);
   NimBLEDevice::setSecurityPasskey(blePin);
   NimBLEDevice::setSecurityIOCap(BLE_HS_IO_DISPLAY_ONLY);
   Serial.printf("[BLE] Passkey auth enabled. PIN: %d\n", blePin);
-
-  NimBLEDevice::init("SmartLock-BLE");
-  NimBLEDevice::setPower(ESP_PWR_LVL_P9);
 
   NimBLEServer *pServer = NimBLEDevice::createServer();
   pServer->setCallbacks(new ServerCallbacks());
