@@ -1,4 +1,5 @@
 import { Injectable } from '@angular/core';
+import { BehaviorSubject } from 'rxjs';
 import { Preferences } from '@capacitor/preferences';
 import {
   BiometricAuth,
@@ -13,13 +14,13 @@ export class LocalAuthService {
   private justUnlocked = false;
   private isAuthenticating = false;
   private unlockTimeout: any;
-  private connectionMode: 'cloud' | 'local' = 'cloud'; // Default to cloud
+  private connectionMode$ = new BehaviorSubject<'cloud' | 'local'>('cloud');
   private bleAuthToken = environment.bleAuthToken; 
   private blePin = environment.blePin; 
 
   async init() {
     const { value: mode } = await Preferences.get({ key: 'app_connection_mode' });
-    this.connectionMode = (mode as 'cloud' | 'local') || 'cloud';
+    this.connectionMode$.next((mode as 'cloud' | 'local') || 'cloud');
 
     const { value: token } = await Preferences.get({ key: 'app_ble_auth_token' });
     if (token) this.bleAuthToken = token;
@@ -28,12 +29,16 @@ export class LocalAuthService {
     if (pin) this.blePin = pin;
   }
 
+  getConnectionMode$() {
+    return this.connectionMode$.asObservable();
+  }
+
   getConnectionMode(): 'cloud' | 'local' {
-    return this.connectionMode;
+    return this.connectionMode$.value;
   }
 
   async setConnectionMode(mode: 'cloud' | 'local') {
-    this.connectionMode = mode;
+    this.connectionMode$.next(mode);
     await Preferences.set({ key: 'app_connection_mode', value: mode });
   }
 

@@ -114,6 +114,8 @@
         class="glass-card status-card"
         [class.device-online]="status.online"
         [class.device-offline]="!status.online"
+        [style.cursor]="status.isLocal && !status.online ? 'pointer' : 'default'"
+        (click)="status.isLocal && !status.online ? connectBle(true) : null"
       >
         <div class="status-icon" [class.local-mode]="status.isLocal">
           <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none"
@@ -131,7 +133,7 @@
           <h3>{{ status.isLocal ? 'Local Control' : 'Smart Lock' }}</h3>
           <p>
             <ng-container *ngIf="status.isLocal; else cloudStatus">
-              {{ status.online ? 'Bluetooth Connected' : 'Searching for device...' }}
+              {{ status.online ? 'Bluetooth Connected' : 'Tap to connect to device...' }}
             </ng-container>
             <ng-template #cloudStatus>
               <ng-container *ngIf="status.online; else offlineStatus">

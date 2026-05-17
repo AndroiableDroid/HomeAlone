@@ -44,14 +44,22 @@ export class DashboardComponent implements OnInit, OnDestroy {
     });
 
     if (this.connectionMode === 'local') {
-      // Open the native BLE device picker so user can select SmartLock-BLE
-      setTimeout(() => this.bleControl.connect().catch(() => {}), 500);
+      // Try background silent auto-connection to previously saved device
+      setTimeout(() => this.connectBle(false), 500);
     }
   }
 
   ngOnDestroy() {
     if (this.authSubscription) {
       this.authSubscription.unsubscribe();
+    }
+  }
+
+  async connectBle(force = false) {
+    try {
+      await this.bleControl.connect(force);
+    } catch (e) {
+      console.error('BLE connection failed', e);
     }
   }
 

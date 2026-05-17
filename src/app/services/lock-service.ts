@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { Database, ref, set, object } from '@angular/fire/database';
-import { Observable, map, combineLatest, timer, startWith, of } from 'rxjs';
+import { Observable, map, combineLatest, timer, startWith, of, BehaviorSubject } from 'rxjs';
 import { LocalAuthService } from './local-auth.service';
 import { BleControlService } from './ble-control.service';
 
@@ -20,6 +20,8 @@ export class LockService {
   private localAuth = inject(LocalAuthService);
   private bleControl = inject(BleControlService);
 
+  private localPumpStatus$ = new BehaviorSubject<string>('STOPPED');
+
   async triggerUnlock() {
     if (this.localAuth.getConnectionMode() === 'local') {
       return this.bleControl.sendCommand('UNLOCK');
@@ -30,7 +32,9 @@ export class LockService {
 
   async setPump(state: 'ON' | 'OFF') {
     if (this.localAuth.getConnectionMode() === 'local') {
-      return this.bleControl.sendCommand(state === 'ON' ? 'PUMP_ON' : 'PUMP_OFF');
+      await this.bleControl.sendCommand(state === 'ON' ? 'PUMP_ON' : 'PUMP_OFF');
+      this.localPumpStatus$.next(state === 'ON' ? 'RUNNING' : 'STOPPED');
+      return;
     }
     return set(ref(this.db, 'pump/status'), state);
   }
@@ -53,9 +57,19 @@ export class LockService {
   }
 
   getPumpStatus(): Observable<string> {
-    return object(ref(this.db, 'pump/status')).pipe(
+    const firebasePump$ = object(ref(this.db, 'pump/status')).pipe(
       map(snap => (snap.snapshot.val() as string) || 'STOPPED'),
-      startWith('STOPPED') // Emit immediately so *ngIf never blocks the card
+      startWith('STOPPED')
+    );
+
+    return combineLatest([
+      firebasePump$,
+      this.localPumpStatus$,
+      this.localAuth.getConnectionMode$()
+    ]).pipe(
+      map(([firebaseVal, localVal, mode]) => {
+        return mode === 'local' ? localVal : firebaseVal;
+      })
     );
   }
 
@@ -72,9 +86,15 @@ export class LockService {
     );
 
     // Combine with a timer to force re-evaluation of 'isStale' every 5 seconds
-    return combineLatest([statusData$, offset$, timer(0, 5000), this.bleControl.getConnectedDevice()]).pipe(
-      map(([val, offset, _, bleDevice]) => {
-        if (this.localAuth.getConnectionMode() === 'local') {
+    return combineLatest([
+      statusData$,
+      offset$,
+      timer(0, 5000),
+      this.bleControl.getConnectedDevice(),
+      this.localAuth.getConnectionMode$()
+    ]).pipe(
+      map(([val, offset, _, bleDevice, mode]) => {
+        if (mode === 'local') {
           return {
             online: !!bleDevice,
             isLocal: true,

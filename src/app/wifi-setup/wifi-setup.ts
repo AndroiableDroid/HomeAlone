@@ -3,6 +3,8 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { BleClient, BleDevice, textToDataView } from '@capacitor-community/bluetooth-le';
+import { Preferences } from '@capacitor/preferences';
+import { LocalAuthService } from '../services/local-auth.service';
 
 const SERVICE_UUID = '4fafc201-1fb5-459e-8fcc-c5c9c331914b';
 const CHARACTERISTIC_UUID_SSID = 'beb5483e-36e1-4688-b7f5-ea07361b26a8';
@@ -20,6 +22,7 @@ type SetupStep = 'scan' | 'connect' | 'credentials' | 'sending' | 'success' | 'e
 export class WifiSetupComponent implements OnInit, OnDestroy {
   private router = inject(Router);
   private ngZone = inject(NgZone);
+  private localAuth = inject(LocalAuthService);
 
   currentStep: SetupStep = 'scan';
   ssid = '';
@@ -135,6 +138,9 @@ export class WifiSetupComponent implements OnInit, OnDestroy {
       });
       this.connectedDevice = device;
       this.currentStep = 'credentials';
+      
+      // Save last connected device ID for BleControlService auto-connect
+      await Preferences.set({ key: 'last_ble_device_id', value: device.deviceId });
     } catch (err) {
       console.error('Connect failed', err);
       this.error = 'Failed to connect. Please try again.';
@@ -176,6 +182,9 @@ export class WifiSetupComponent implements OnInit, OnDestroy {
       } catch (e) { /* ESP32 already rebooting */ }
 
       this.currentStep = 'success';
+
+      // Set connection mode to cloud after successful WiFi setup
+      await this.localAuth.setConnectionMode('cloud');
 
       setTimeout(() => {
         this.router.navigate(['/dashboard']);
