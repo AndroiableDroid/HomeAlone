@@ -4,6 +4,7 @@ import { App } from '@capacitor/app';
 import { AuthService } from './services/auth-service';
 import { LocalAuthService } from './services/local-auth.service';
 import { BleControlService } from './services/ble-control.service';
+import { NotificationService } from './services/notification.service';
 
 @Component({
   selector: 'app-root',
@@ -18,12 +19,14 @@ export class AppComponent implements OnInit {
   private authService = inject(AuthService);
   private localAuth = inject(LocalAuthService);
   private bleControl = inject(BleControlService);
+  private notificationService = inject(NotificationService);
   private ngZone = inject(NgZone);
 
   async ngOnInit() {
     console.log('AppComponent initialized');
     await this.localAuth.init();
     await this.bleControl.init();
+    await this.notificationService.init();
 
     // Listen for widget deep-link shortcuts
     App.addListener('appUrlOpen', (event: any) => {

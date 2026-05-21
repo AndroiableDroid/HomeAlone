@@ -45,6 +45,18 @@
                 android:resource="@xml/smart_lock_widget_info" />
         </receiver>
 
+        <!-- Notification + Widget Action Receiver                                -->
+        <!-- Handles quick-action button taps silently (no app launch).          -->
+        <!-- Receives: ACTION_UNLOCK, ACTION_PUMP from notification & widget.    -->
+        <receiver
+            android:name=".NotificationActionReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.androiabledroid.smartlock.ACTION_UNLOCK" />
+                <action android:name="com.androiabledroid.smartlock.ACTION_PUMP" />
+            </intent-filter>
+        </receiver>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -58,8 +70,10 @@
 
     <!-- Permissions -->
 
+
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- BLE Permissions (Android 12+ / API 31+) -->
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />

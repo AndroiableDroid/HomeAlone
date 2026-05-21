@@ -4,4 +4,12 @@
     <string name="title_activity_main">SmartLock</string>
     <string name="package_name">com.androiabledroid.smartlock</string>
     <string name="custom_url_scheme">com.androiabledroid.smartlock</string>
+
+    <!-- Firebase Realtime Database REST access                                   -->
+    <!-- firebase_database_url: from Firebase Console → Realtime Database → Data  -->
+    <!-- firebase_db_secret: Firebase Console → Project Settings → Service        -->
+    <!--   Accounts → Database secrets → "Add secret" (legacy admin token)        -->
+    <string name="firebase_database_url">https://home-alone-afe3c-default-rtdb.firebaseio.com</string>
+    <string name="firebase_db_secret">I8PReN3aBJSFE2b8JOYPLyMdsvFIYnozBzQk2mJN</string>
 </resources>
+
