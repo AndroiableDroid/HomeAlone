@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Water drop icon used as the base for the pump button animation.
+    This is the static shape — the animated version references this.
+    Path: a stylised water drop (teardrop) shape centered in a 24x24 viewport.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+
+    <!-- Outer ripple ring 1 (large) -->
+    <path
+        android:name="ripple_outer"
+        android:pathData="M24,8 C15.16,8 8,15.16 8,24 C8,32.84 15.16,40 24,40 C32.84,40 40,32.84 40,24 C40,15.16 32.84,8 24,8 Z"
+        android:strokeColor="#800EA5E9"
+        android:strokeWidth="1.5"
+        android:fillColor="#00000000" />
+
+    <!-- Outer ripple ring 2 (medium) -->
+    <path
+        android:name="ripple_mid"
+        android:pathData="M24,12 C17.37,12 12,17.37 12,24 C12,30.63 17.37,36 24,36 C30.63,36 36,30.63 36,24 C36,17.37 30.63,12 24,12 Z"
+        android:strokeColor="#B30EA5E9"
+        android:strokeWidth="1.5"
+        android:fillColor="#00000000" />
+
+    <!-- Water drop body -->
+    <path
+        android:name="drop_body"
+        android:pathData="M24,10 C24,10 14,22 14,28 C14,33.52 18.48,38 24,38 C29.52,38 34,33.52 34,28 C34,22 24,10 24,10 Z"
+        android:fillColor="#0EA5E9"
+        android:strokeColor="#38BDF8"
+        android:strokeWidth="1" />
+
+    <!-- Water drop highlight (shine) -->
+    <path
+        android:name="drop_shine"
+        android:pathData="M20,22 C20,22 18,26 18,29 C18,30.1 18.45,31.1 19.17,31.83"
+        android:strokeColor="#7DD3FC"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+
+    <!-- Wave lines below drop -->
+    <path
+        android:name="wave1"
+        android:pathData="M17,41 C19,39.5 21,42 23,40.5 C25,39 27,41.5 29,40"
+        android:strokeColor="#0EA5E9"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+
+    <path
+        android:name="wave2"
+        android:pathData="M19,44 C21,42.5 23,45 25,43.5 C27,42 29,44.5 31,43"
+        android:strokeColor="#38BDF8"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:alpha="0.6" />
+
+</vector>

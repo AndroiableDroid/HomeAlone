@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    AnimatedVectorDrawable — Water Pump Animation
+    Ties the ic_pump_drop.xml vector paths to their animators.
+    Use in widget ImageView via RemoteViews.setImageViewResource() +
+    AppWidgetManager.notifyAppWidgetViewDataChanged() or startAnimation().
+
+    Named targets match the android:name attributes in ic_pump_drop.xml:
+      - drop_body   → bobs up/down
+      - wave1       → ripples left/right + fades
+      - wave2       → ripples left/right + fades (offset phase)
+      - ripple_outer → expands + fades (sonar pulse)
+      - ripple_mid  → expands + fades (sonar pulse, delayed via startOffset)
+-->
+<animated-vector
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/ic_pump_drop">
+
+    <!-- Water drop bobs up and down -->
+    <target
+        android:name="drop_body"
+        android:animation="@animator/pump_drop_bob" />
+
+    <target
+        android:name="drop_shine"
+        android:animation="@animator/pump_drop_bob" />
+
+    <!-- Wave lines ripple side to side -->
+    <target
+        android:name="wave1"
+        android:animation="@animator/pump_wave_ripple" />
+
+    <target
+        android:name="wave2"
+        android:animation="@animator/pump_wave_ripple" />
+
+    <!-- Outer ripple expands and fades (sonar / pulse effect) -->
+    <target
+        android:name="ripple_outer"
+        android:animation="@animator/pump_ripple_expand" />
+
+    <target
+        android:name="ripple_mid"
+        android:animation="@animator/pump_ripple_expand" />
+
+</animated-vector>

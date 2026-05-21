@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Animator for outer ripple ring: scale + fade out (expanding ring effect).
+    Duration: 2000ms, infinite.
+-->
+<set xmlns:android="http://schemas.android.com/apk/res/android">
+    <objectAnimator
+        android:duration="2000"
+        android:propertyName="scaleX"
+        android:valueFrom="0.7"
+        android:valueTo="1.1"
+        android:valueType="floatType"
+        android:repeatCount="infinite"
+        android:repeatMode="restart"
+        android:interpolator="@android:interpolator/decelerate_quad" />
+    <objectAnimator
+        android:duration="2000"
+        android:propertyName="scaleY"
+        android:valueFrom="0.7"
+        android:valueTo="1.1"
+        android:valueType="floatType"
+        android:repeatCount="infinite"
+        android:repeatMode="restart"
+        android:interpolator="@android:interpolator/decelerate_quad" />
+    <objectAnimator
+        android:duration="2000"
+        android:propertyName="alpha"
+        android:valueFrom="0.8"
+        android:valueTo="0"
+        android:valueType="floatType"
+        android:repeatCount="infinite"
+        android:repeatMode="restart" />
+</set>
