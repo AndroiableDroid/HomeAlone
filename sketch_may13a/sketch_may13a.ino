@@ -2,8 +2,13 @@
 #include <NimBLEDevice.h>
 #include <Firebase_ESP_Client.h>
 #include <Preferences.h>
+#include <HTTPClient.h>
+#include <Update.h>
 #include "addons/TokenHelper.h"
 #include "addons/RTDBHelper.h"
+
+// Firmware version -- bump this string with every OTA release
+#define APP_VERSION "1.0.1"
 
 #ifdef __has_include
 #  if __has_include("secrets.h")
@@ -52,9 +57,11 @@ bool isFirebaseReady = false;
 unsigned long lastHeartbeat = 0;
 unsigned long lastDoorCheck = 0;
 unsigned long lastPumpCheck = 0;
+unsigned long lastOtaCheck  = 0;
 const unsigned long HEARTBEAT_INTERVAL  = 15000;
 const unsigned long DOOR_CHECK_INTERVAL = 1000;
 const unsigned long PUMP_CHECK_INTERVAL = 5000;
+const unsigned long OTA_CHECK_INTERVAL  = 300000; // 5 minutes
 const unsigned long DOOR_RELOCK_DELAY_MS = 1000;
 
 bool isSetupMode = false;
@@ -139,6 +146,83 @@ void setPumpAction(bool on) {
   }
 }
 
+// ─── OTA Update ────────────────────────────────────────────
+
+// Download a firmware binary from `url` and flash it.
+// Call only when WiFi is connected and Firebase is ready.
+void performOTA(const String &url) {
+  Serial.printf("[OTA] Starting update from: %s\n", url.c_str());
+  flashLed(3, 100);
+
+  HTTPClient http;
+  http.begin(url);
+  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+  int httpCode = http.GET();
+
+  if (httpCode != HTTP_CODE_OK) {
+    Serial.printf("[OTA] HTTP error: %d\n", httpCode);
+    http.end();
+    return;
+  }
+
+  int totalSize = http.getSize();
+  Serial.printf("[OTA] Firmware size: %d bytes\n", totalSize);
+
+  if (!Update.begin(totalSize > 0 ? totalSize : UPDATE_SIZE_UNKNOWN)) {
+    Serial.printf("[OTA] Cannot begin update: %s\n", Update.errorString());
+    http.end();
+    return;
+  }
+
+  WiFiClient *stream = http.getStreamPtr();
+  size_t written = Update.writeStream(*stream);
+  Serial.printf("[OTA] Written %u / %d bytes\n", written, totalSize);
+
+  if (!Update.end(true)) {
+    Serial.printf("[OTA] Finalize failed: %s\n", Update.errorString());
+    http.end();
+    return;
+  }
+
+  http.end();
+  Serial.println("[OTA] Update complete! Rebooting...");
+  flashLed(10, 50);
+  delay(500);
+  ESP.restart();
+}
+
+// Poll Firebase for a newer firmware version and trigger OTA if found.
+void checkOTA() {
+  if (!Firebase.ready()) return;
+
+  // Check safety switch first
+  if (Firebase.RTDB.getBool(&reqFbdo, "/ota/enabled")) {
+    if (!reqFbdo.boolData()) {
+      Serial.println("[OTA] OTA disabled via Firebase.");
+      return;
+    }
+  }
+
+  // Read available version
+  if (!Firebase.RTDB.getString(&reqFbdo, "/ota/version")) return;
+  String available = reqFbdo.stringData();
+
+  if (available == "" || available == APP_VERSION) return; // Already current
+
+  Serial.printf("[OTA] New version available: %s (running: %s)\n",
+                available.c_str(), APP_VERSION);
+
+  // Read download URL
+  if (!Firebase.RTDB.getString(&reqFbdo, "/ota/url")) return;
+  String otaUrl = reqFbdo.stringData();
+  if (otaUrl == "") {
+    Serial.println("[OTA] URL is empty, skipping.");
+    return;
+  }
+
+  performOTA(otaUrl);
+}
+
 // ─── Firebase Command Stream Callback ──────────────────────
 void commandCallback(FirebaseStream data) {
   if (data.dataTypeEnum() != firebase_rtdb_data_type_string) return;
@@ -155,6 +239,10 @@ void commandCallback(FirebaseStream data) {
     preferences.end();
     delay(1000);
     ESP.restart();
+  } else if (cmd == "OTA_UPDATE") {
+    Serial.println(">>> OTA_UPDATE received! Checking for update...");
+    Firebase.RTDB.setString(&reqFbdo, "/device/command", "IDLE");
+    checkOTA(); // Immediate check, does not wait for the poll interval
   }
 }
 
@@ -196,6 +284,7 @@ void sendHeartbeat() {
   json.set("online", true);
   json.set("rssi", WiFi.RSSI());
   json.set("uptime", (int)(millis() / 1000));
+  json.set("version", APP_VERSION);
   json.set("lastSeen/.sv", "timestamp");
   Firebase.RTDB.setJSON(&reqFbdo, "/device/status", &json);
 }
@@ -463,7 +552,6 @@ void setup() {
   preferences.begin("wifi-creds", true);
   String savedSsid = preferences.getString("ssid", "");
   String savedPass = preferences.getString("password", "");
-  int failCount    = preferences.getInt("fail_count", 0);
   preferences.end();
 
   if (savedSsid == "" || isBleOnly) {
@@ -477,9 +565,10 @@ void setup() {
     return;
   }
 
-  Serial.printf("Connecting to WiFi: %s (Attempt %d/3)\n", savedSsid.c_str(), failCount + 1);
+  Serial.printf("Connecting to WiFi: %s\n", savedSsid.c_str());
   WiFi.begin(savedSsid.c_str(), savedPass.c_str());
 
+  // Wait up to 15 s for connection
   int counter = 0;
   while (WiFi.status() != WL_CONNECTED && counter < 30) {
     blinkLed(500);
@@ -487,30 +576,40 @@ void setup() {
     Serial.print(".");
     counter++;
   }
+  Serial.println();
 
   if (WiFi.status() != WL_CONNECTED) {
-    failCount++;
-    preferences.begin("wifi-creds", false);
-    preferences.putInt("fail_count", failCount);
-    preferences.end();
+    wl_status_t wifiStatus = WiFi.status();
 
-    if (failCount >= 3) {
-      Serial.println("\n3 WiFi failures. Clearing credentials...");
+    // ── Distinguish failure type ────────────────────────────
+    // WL_CONNECT_FAILED  → router rejected the password (bad creds)
+    // WL_NO_SSID_AVAIL   → SSID not found (wrong SSID or router restarting)
+    // WL_DISCONNECTED    → timeout / router temporarily offline
+    bool badCredentials = (wifiStatus == WL_CONNECT_FAILED);
+
+    if (badCredentials) {
+      // Confirmed wrong password: wipe creds immediately so user
+      // can re-provision via BLE without waiting for 3 attempts.
+      Serial.println("[WiFi] Auth rejected by router. Clearing credentials.");
       preferences.begin("wifi-creds", false);
       preferences.clear();
       preferences.end();
+      startBleServer();
+      startSetupMode();   // Enter provisioning mode
+    } else {
+      // Transient failure (router restarting, signal lost, power blip).
+      // Keep saved credentials -- next reboot will retry automatically.
+      Serial.printf("[WiFi] Transient failure (status=%d). Credentials preserved.\n", wifiStatus);
+      Serial.println("[WiFi] Starting BLE standby. Device will retry on next reboot.");
+      startBleServer();   // BLE available for manual re-provisioning if needed
+      // Do NOT call startSetupMode() -- flag stays false so loop() runs normally
+      // but isFirebaseReady=false keeps Firebase ops gated.
     }
-    startBleServer();
-    startSetupMode();
     return;
   }
 
   Serial.println("\nWiFi Connected! IP: " + WiFi.localIP().toString());
   digitalWrite(ledPin, HIGH);
-
-  preferences.begin("wifi-creds", false);
-  preferences.putInt("fail_count", 0);
-  preferences.end();
 
   config.api_key        = API_KEY;
   config.database_url   = DATABASE_URL;
@@ -578,5 +677,10 @@ void loop() {
   if (now - lastHeartbeat >= HEARTBEAT_INTERVAL || lastHeartbeat == 0) {
     lastHeartbeat = now;
     sendHeartbeat();
+  }
+
+  if (now - lastOtaCheck >= OTA_CHECK_INTERVAL || lastOtaCheck == 0) {
+    lastOtaCheck = now;
+    checkOTA();
   }
 }
