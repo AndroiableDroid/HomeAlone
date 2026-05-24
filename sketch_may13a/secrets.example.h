@@ -13,4 +13,7 @@
 #define GITHUB_REPO    "your-repo"
 #define GITHUB_TOKEN   "github_pat_xxx........................................."
 
+#define BETTERSTACK_TOKEN "your_betterstack_source_token_here"
+#define BETTERSTACK_URL   "url"
+
 #endif // BUILD_OPT_H

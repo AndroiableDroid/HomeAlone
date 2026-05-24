@@ -9,7 +9,7 @@
 #include "addons/RTDBHelper.h"
 
 // Firmware version -- bump this string with every OTA release
-#define APP_VERSION    "1.0.3"
+#define APP_VERSION    "1.0.4"
 
 #ifdef __has_include
 #  if __has_include("secrets.h")
@@ -38,6 +38,12 @@
 #endif
 #ifndef GITHUB_TOKEN
 #  error "GITHUB_TOKEN not defined. Add your fine-grained PAT to secrets.h."
+#endif
+#ifndef BETTERSTACK_TOKEN
+#  error "BETTERSTACK_TOKEN not defined. Add your Better Stack source token to secrets.h."
+#endif
+#ifndef BETTERSTACK_URL
+#  error "BETTERSTACK_URL not defined. Add your Better Stack URL endpoint to secrets.h."
 #endif
 
 // UUIDs for BLE Service and Characteristics
@@ -150,6 +156,26 @@ void setPumpAction(bool on) {
   }
 }
 
+// Send logs over the internet to Better Stack dashboard
+void remoteLog(const String &level, const String &msg) {
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  NetworkClientSecure client;
+  client.setInsecure(); // Skip certificate verification to save memory and flash size
+
+  HTTPClient http;
+  http.begin(client, BETTERSTACK_URL);
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("Authorization", "Bearer " BETTERSTACK_TOKEN);
+
+  String payload = "{\"level\":\"" + level + 
+                   "\",\"message\":\"" + msg + 
+                   "\",\"version\":\"" APP_VERSION "\"}";
+
+  int httpCode = http.POST(payload);
+  http.end();
+}
+
 // ─── OTA Update ────────────────────────────────────────────
 //
 // All OTA HTTPS calls share a single NetworkClientSecure with setInsecure()
@@ -174,6 +200,7 @@ String resolveGitHubAssetUrl(NetworkClientSecure &client, const String &tag) {
   int code = http.GET();
   if (code != HTTP_CODE_OK) {
     Serial.printf("[OTA] API error: %d\n", code);
+    remoteLog("error", "[OTA] API release check error: " + String(code));
     http.end();
     return "";
   }
@@ -211,6 +238,7 @@ String resolveGitHubAssetUrl(NetworkClientSecure &client, const String &tag) {
 //           -> stream binary to Update
 void performOTA(NetworkClientSecure &client, const String &assetApiUrl) {
   Serial.println("[OTA] Starting update...");
+  remoteLog("info", "[OTA] Starting firmware update from asset API");
   flashLed(3, 100);
 
   // -- Step 1: get the CDN redirect from the API asset URL --------------------
@@ -233,6 +261,7 @@ void performOTA(NetworkClientSecure &client, const String &assetApiUrl) {
   } else {
     Serial.printf("[OTA] API did not redirect: %d (%s)\n",
                   apiCode, apiHttp.errorToString(apiCode).c_str());
+    remoteLog("error", "[OTA] API did not redirect. Code: " + String(apiCode) + " (" + apiHttp.errorToString(apiCode) + ")");
     apiHttp.end();
     return;
   }
@@ -256,6 +285,7 @@ void performOTA(NetworkClientSecure &client, const String &assetApiUrl) {
   if (cdnCode != HTTP_CODE_OK) {
     Serial.printf("[OTA] CDN error: %d (%s)\n",
                   cdnCode, cdnHttp.errorToString(cdnCode).c_str());
+    remoteLog("error", "[OTA] CDN download error: " + String(cdnCode) + " (" + cdnHttp.errorToString(cdnCode) + ")");
     cdnHttp.end();
     return;
   }
@@ -265,6 +295,7 @@ void performOTA(NetworkClientSecure &client, const String &assetApiUrl) {
 
   if (!Update.begin(totalSize > 0 ? totalSize : UPDATE_SIZE_UNKNOWN)) {
     Serial.printf("[OTA] Cannot begin: %s\n", Update.errorString());
+    remoteLog("error", "[OTA] Cannot begin flashing: " + String(Update.errorString()));
     cdnHttp.end();
     return;
   }
@@ -275,12 +306,15 @@ void performOTA(NetworkClientSecure &client, const String &assetApiUrl) {
 
   if (!Update.end(true)) {
     Serial.printf("[OTA] Finalize failed: %s\n", Update.errorString());
+    remoteLog("error", "[OTA] Flashing finalize failed: " + String(Update.errorString()));
     cdnHttp.end();
     return;
   }
 
   cdnHttp.end();
   Serial.println("[OTA] Update complete! Rebooting...");
+  remoteLog("info", "[OTA] Update complete! Rebooting to new version.");
+  delay(1000); // Allow remoteLog http request to finish
   flashLed(10, 50);
   delay(500);
   ESP.restart();
@@ -307,6 +341,7 @@ void checkOTA() {
 
   Serial.printf("[OTA] New version: %s (running: %s)\n",
                 available.c_str(), APP_VERSION);
+  remoteLog("info", "[OTA] Found new version online: " + available + " (running: " + String(APP_VERSION) + ")");
 
   if (!Firebase.RTDB.getString(&reqFbdo, "/ota/tag")) return;
   String tag = reqFbdo.stringData();
@@ -334,6 +369,7 @@ void commandCallback(FirebaseStream data) {
 
   String cmd = data.stringData();
   Serial.printf("[Stream] /device/command = %s\n", cmd.c_str());
+  remoteLog("info", "[Stream] Received remote command: " + cmd);
 
   if (cmd == "RESET_WIFI") {
     Serial.println(">>> RESET_WIFI received! Clearing credentials...");
@@ -363,6 +399,7 @@ void checkDoorStatus() {
     String val = reqFbdo.stringData();
     if (val == "UNLOCKED") {
       unlockDoorAction();
+      remoteLog("info", "[Action] Door unlocked remotely via Firebase");
       Firebase.RTDB.setString(&reqFbdo, "/door/status", "LOCKED");
     }
   }
@@ -374,9 +411,11 @@ void checkPumpStatus() {
     String val = pumpFbdo.stringData();
     if (val == "ON") {
       setPumpAction(true);
+      remoteLog("info", "[Action] Water Pump set to ON");
       Firebase.RTDB.setString(&pumpFbdo, "/pump/status", "RUNNING");
     } else if (val == "OFF") {
       setPumpAction(false);
+      remoteLog("info", "[Action] Water Pump set to OFF");
       Firebase.RTDB.setString(&pumpFbdo, "/pump/status", "STOPPED");
     }
   }
@@ -748,6 +787,7 @@ void setup() {
 
   isFirebaseReady = true;
   Serial.println("System online. Listening for commands...");
+  remoteLog("info", "System online. Listening for commands. IP: " + WiFi.localIP().toString());
 
   // Always start BLE for direct control even in WiFi mode
   startBleServer();
