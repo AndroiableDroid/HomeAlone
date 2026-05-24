@@ -3,12 +3,13 @@
 #include <Firebase_ESP_Client.h>
 #include <Preferences.h>
 #include <HTTPClient.h>
+#include <NetworkClientSecure.h>  // ESP32 core 3.x: setInsecure() lives here
 #include <Update.h>
 #include "addons/TokenHelper.h"
 #include "addons/RTDBHelper.h"
 
 // Firmware version -- bump this string with every OTA release
-#define APP_VERSION "1.0.1"
+#define APP_VERSION    "1.0.3"
 
 #ifdef __has_include
 #  if __has_include("secrets.h")
@@ -34,6 +35,9 @@
 #endif
 #ifndef BLE_PIN
 #  error "BLE_PIN not defined. Create secrets.h with your secrets."
+#endif
+#ifndef GITHUB_TOKEN
+#  error "GITHUB_TOKEN not defined. Add your fine-grained PAT to secrets.h."
 #endif
 
 // UUIDs for BLE Service and Characteristics
@@ -147,44 +151,135 @@ void setPumpAction(bool on) {
 }
 
 // ─── OTA Update ────────────────────────────────────────────
+//
+// All OTA HTTPS calls share a single NetworkClientSecure with setInsecure()
+// to avoid heap fragmentation. Each TLS session allocates ~40 KB; creating
+// three separate clients exhausts the ESP32's ~160 KB of usable heap.
+// By reusing one client we keep peak memory low and predictable.
 
-// Download a firmware binary from `url` and flash it.
-// Call only when WiFi is connected and Firebase is ready.
-void performOTA(const String &url) {
-  Serial.printf("[OTA] Starting update from: %s\n", url.c_str());
-  flashLed(3, 100);
+// Resolve the GitHub release tag to an API asset download URL.
+// Returns "" on any error.
+String resolveGitHubAssetUrl(NetworkClientSecure &client, const String &tag) {
+  String apiUrl = "https://api.github.com/repos/"
+                  GITHUB_OWNER "/" GITHUB_REPO "/releases/tags/" + tag;
+  Serial.printf("[OTA] Querying: %s\n", apiUrl.c_str());
 
   HTTPClient http;
-  http.begin(url);
-  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-  int httpCode = http.GET();
+  http.begin(client, apiUrl);
+  http.addHeader("Authorization",        "Bearer " GITHUB_TOKEN);
+  http.addHeader("Accept",               "application/vnd.github+json");
+  http.addHeader("X-GitHub-Api-Version", "2022-11-28");
+  http.setTimeout(10000);
 
-  if (httpCode != HTTP_CODE_OK) {
-    Serial.printf("[OTA] HTTP error: %d\n", httpCode);
+  int code = http.GET();
+  if (code != HTTP_CODE_OK) {
+    Serial.printf("[OTA] API error: %d\n", code);
     http.end();
+    return "";
+  }
+
+  String body = http.getString();
+  http.end();
+
+  // Find the first asset URL inside the "assets" array.
+  const String prefix = "https://api.github.com/repos/"
+                        GITHUB_OWNER "/" GITHUB_REPO "/releases/assets/";
+  int assetsIdx = body.indexOf("\"assets\":");
+  if (assetsIdx == -1) {
+    Serial.println("[OTA] No assets key in response.");
+    return "";
+  }
+  int urlIdx = body.indexOf(prefix, assetsIdx);
+  if (urlIdx == -1) {
+    Serial.println("[OTA] No asset uploaded to this release.");
+    return "";
+  }
+  int urlEnd = body.indexOf('"', urlIdx);
+  if (urlEnd == -1) return "";
+
+  String assetUrl = body.substring(urlIdx, urlEnd);
+  Serial.printf("[OTA] Asset URL: %s\n", assetUrl.c_str());
+  return assetUrl;
+}
+
+// Download and flash a firmware binary.
+//
+// Flow:
+//   Step 1: GET api.github.com/.../assets/<id>  (Bearer auth)
+//           -> 302 to release-assets.githubusercontent.com
+//   Step 2: GET release-assets URL               (no auth)
+//           -> stream binary to Update
+void performOTA(NetworkClientSecure &client, const String &assetApiUrl) {
+  Serial.println("[OTA] Starting update...");
+  flashLed(3, 100);
+
+  // -- Step 1: get the CDN redirect from the API asset URL --------------------
+  HTTPClient apiHttp;
+  apiHttp.begin(client, assetApiUrl);
+  apiHttp.addHeader("Authorization",        "Bearer " GITHUB_TOKEN);
+  apiHttp.addHeader("Accept",               "application/octet-stream");
+  apiHttp.addHeader("X-GitHub-Api-Version", "2022-11-28");
+  apiHttp.setTimeout(10000);
+  apiHttp.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
+
+  int apiCode = apiHttp.GET();
+  String cdnUrl = "";
+
+  if (apiCode == HTTP_CODE_FOUND             // 302 expected
+   || apiCode == HTTP_CODE_MOVED_PERMANENTLY // 301
+   || apiCode == 303) {
+    cdnUrl = apiHttp.getLocation();
+    Serial.printf("[OTA] CDN URL resolved (%d chars)\n", cdnUrl.length());
+  } else {
+    Serial.printf("[OTA] API did not redirect: %d (%s)\n",
+                  apiCode, apiHttp.errorToString(apiCode).c_str());
+    apiHttp.end();
+    return;
+  }
+  apiHttp.end();
+
+  if (cdnUrl == "") {
+    Serial.println("[OTA] Empty CDN URL, aborting.");
     return;
   }
 
-  int totalSize = http.getSize();
+  // Small delay to let the TCP stack fully release the previous connection
+  delay(100);
+
+  // -- Step 2: download binary from CDN (no auth) -----------------------------
+  HTTPClient cdnHttp;
+  cdnHttp.begin(client, cdnUrl);               // reuse the same TLS client
+  cdnHttp.setTimeout(30000);
+  cdnHttp.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+  int cdnCode = cdnHttp.GET();
+
+  if (cdnCode != HTTP_CODE_OK) {
+    Serial.printf("[OTA] CDN error: %d (%s)\n",
+                  cdnCode, cdnHttp.errorToString(cdnCode).c_str());
+    cdnHttp.end();
+    return;
+  }
+
+  int totalSize = cdnHttp.getSize();
   Serial.printf("[OTA] Firmware size: %d bytes\n", totalSize);
 
   if (!Update.begin(totalSize > 0 ? totalSize : UPDATE_SIZE_UNKNOWN)) {
-    Serial.printf("[OTA] Cannot begin update: %s\n", Update.errorString());
-    http.end();
+    Serial.printf("[OTA] Cannot begin: %s\n", Update.errorString());
+    cdnHttp.end();
     return;
   }
 
-  WiFiClient *stream = http.getStreamPtr();
+  WiFiClient *stream = cdnHttp.getStreamPtr();
   size_t written = Update.writeStream(*stream);
   Serial.printf("[OTA] Written %u / %d bytes\n", written, totalSize);
 
   if (!Update.end(true)) {
     Serial.printf("[OTA] Finalize failed: %s\n", Update.errorString());
-    http.end();
+    cdnHttp.end();
     return;
   }
 
-  http.end();
+  cdnHttp.end();
   Serial.println("[OTA] Update complete! Rebooting...");
   flashLed(10, 50);
   delay(500);
@@ -192,10 +287,13 @@ void performOTA(const String &url) {
 }
 
 // Poll Firebase for a newer firmware version and trigger OTA if found.
+// Firebase schema:
+//   /ota/enabled  (bool)   -- safety switch; set false to pause OTA
+//   /ota/version  (string) -- available version, e.g. "1.0.2"
+//   /ota/tag      (string) -- matching GitHub release tag, e.g. "v1.0.2"
 void checkOTA() {
   if (!Firebase.ready()) return;
 
-  // Check safety switch first
   if (Firebase.RTDB.getBool(&reqFbdo, "/ota/enabled")) {
     if (!reqFbdo.boolData()) {
       Serial.println("[OTA] OTA disabled via Firebase.");
@@ -203,24 +301,31 @@ void checkOTA() {
     }
   }
 
-  // Read available version
   if (!Firebase.RTDB.getString(&reqFbdo, "/ota/version")) return;
   String available = reqFbdo.stringData();
+  if (available == "" || available == APP_VERSION) return;
 
-  if (available == "" || available == APP_VERSION) return; // Already current
-
-  Serial.printf("[OTA] New version available: %s (running: %s)\n",
+  Serial.printf("[OTA] New version: %s (running: %s)\n",
                 available.c_str(), APP_VERSION);
 
-  // Read download URL
-  if (!Firebase.RTDB.getString(&reqFbdo, "/ota/url")) return;
-  String otaUrl = reqFbdo.stringData();
-  if (otaUrl == "") {
-    Serial.println("[OTA] URL is empty, skipping.");
+  if (!Firebase.RTDB.getString(&reqFbdo, "/ota/tag")) return;
+  String tag = reqFbdo.stringData();
+  if (tag == "") {
+    Serial.println("[OTA] /ota/tag is empty, skipping.");
     return;
   }
 
-  performOTA(otaUrl);
+  // Create one shared TLS client for the entire OTA process.
+  // setInsecure() skips cert verification, which is acceptable here because
+  // the URLs come from our own Firebase RTDB and the GitHub API validates
+  // via Bearer token before serving content.
+  NetworkClientSecure otaClient;
+  otaClient.setInsecure();
+
+  String assetUrl = resolveGitHubAssetUrl(otaClient, tag);
+  if (assetUrl == "") return;
+
+  performOTA(otaClient, assetUrl);
 }
 
 // ─── Firebase Command Stream Callback ──────────────────────

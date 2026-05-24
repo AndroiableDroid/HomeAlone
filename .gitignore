@@ -45,3 +45,5 @@ Thumbs.db
 
 */environments/environment.ts
 */secrets.h
+
+*/build/
