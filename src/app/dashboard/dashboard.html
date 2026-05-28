@@ -171,56 +171,69 @@
     <div class="widgets-grid">
       
       <!-- WIDGET 1: Slide to Unlock Front Door -->
-      <div class="glass-card widget-card door-widget" [class.unlocked]="isUnlocking">
-        <div class="widget-header">
-          <div class="widget-icon lock-icon" [class.unlocked]="isUnlocking">
-            @if (!isUnlocking) {
-              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-              </svg>
-            }
-            @if (isUnlocking) {
-              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                <path d="M7 11V7a5 5 0 0 1 9.9-1" />
-              </svg>
-            }
-          </div>
-          <span class="widget-badge" [class.active]="isUnlocking">{{ isUnlocking ? 'OPEN' : 'LOCKED' }}</span>
-        </div>
-        
-        <div class="widget-body">
-          <h4>Front Door</h4>
-          <p class="widget-subtitle">{{ isUnlocking ? 'Lock released (3s duration)' : 'Securely locked & armed' }}</p>
-          
-          <!-- Slide Controller -->
-          <div class="slider-wrapper" *ngIf="!isUnlocking">
-            <div class="slider-track" [style.background]="'linear-gradient(90deg, rgba(99, 102, 241, 0.25) ' + slideProgress + '%, rgba(255, 255, 255, 0.04) ' + slideProgress + '%)'">
-              <span class="slider-label" [style.opacity]="(100 - slideProgress * 1.5) / 100">Slide to Unlock Door</span>
-              <input 
-                type="range" 
-                min="0" 
-                max="100" 
-                [value]="slideProgress" 
-                (input)="onSlideChange($event)" 
-                (change)="onSlideChange($event)" 
-                (mouseup)="onSlideRelease()" 
-                (touchend)="onSlideRelease()" 
-                class="slider-input" />
-              <div class="slider-thumb" [style.left.%]="slideProgress * 0.82">
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-              </div>
+      @if (deviceStatus$ | async; as doorStatus) {
+        <div class="glass-card widget-card door-widget" [class.unlocked]="isUnlocking" [class.widget-offline]="!doorStatus.online">
+          <div class="widget-header">
+            <div class="widget-icon lock-icon" [class.unlocked]="isUnlocking">
+              @if (!isUnlocking) {
+                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg>
+              }
+              @if (isUnlocking) {
+                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                  <path d="M7 11V7a5 5 0 0 1 9.9-1" />
+                </svg>
+              }
             </div>
+            <span class="widget-badge" [class.active]="isUnlocking" [class.badge-offline]="!doorStatus.online">{{ !doorStatus.online ? 'OFFLINE' : isUnlocking ? 'OPEN' : 'LOCKED' }}</span>
           </div>
 
-          <!-- Unlocking Spinner Screen -->
-          <div class="unlocking-spinner-container animate-fade-in" *ngIf="isUnlocking">
-            <div class="unlock-spinner"></div>
-            <span class="pulse-text">Front Door Unlocking...</span>
+          <div class="widget-body">
+            <h4>Front Door</h4>
+            <p class="widget-subtitle">{{ isUnlocking ? 'Lock released (3s duration)' : doorStatus.online ? 'Securely locked &amp; armed' : 'Device offline — controls unavailable' }}</p>
+
+            @if (doorStatus.online) {
+              <!-- Slide Controller -->
+              <div class="slider-wrapper" *ngIf="!isUnlocking">
+                <div class="slider-track" [style.background]="'linear-gradient(90deg, rgba(99, 102, 241, 0.25) ' + slideProgress + '%, rgba(255, 255, 255, 0.04) ' + slideProgress + '%)'">
+                  <span class="slider-label" [style.opacity]="(100 - slideProgress * 1.5) / 100">Slide to Unlock Door</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    [value]="slideProgress"
+                    (input)="onSlideChange($event)"
+                    (change)="onSlideChange($event)"
+                    (mouseup)="onSlideRelease()"
+                    (touchend)="onSlideRelease()"
+                    class="slider-input" />
+                  <div class="slider-thumb" [style.left.%]="slideProgress * 0.82">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Unlocking Spinner Screen -->
+              <div class="unlocking-spinner-container animate-fade-in" *ngIf="isUnlocking">
+                <div class="unlock-spinner"></div>
+                <span class="pulse-text">Front Door Unlocking...</span>
+              </div>
+            } @else {
+              <!-- Offline placeholder -->
+              <div class="offline-placeholder">
+                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="offline-icon">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                  <line x1="2" y1="2" x2="22" y2="22" />
+                </svg>
+                <span>Unlock unavailable while offline</span>
+              </div>
+            }
           </div>
         </div>
-      </div>
+      }
 
       <!-- WIDGET 2: Circular Swirling Water Pump -->
       @if (pump$ | async; as pumpStatus) {
@@ -243,13 +256,19 @@
                 {{ (pumpStatus === 'RUNNING' || pumpStatus === 'ON') ? 'Liquid motor engaged' : 'System idle' }}
               </p>
               
-              <button 
-                class="widget-action-btn"
-                [class.btn-active]="pumpStatus === 'RUNNING' || pumpStatus === 'ON'"
-                [disabled]="isPumpToggling"
-                (click)="togglePump(pumpStatus)">
-                {{ isPumpToggling ? '...' : (pumpStatus === 'RUNNING' || pumpStatus === 'ON') ? 'Turn Off' : 'Turn On' }}
-              </button>
+              @if (deviceStatus$ | async; as pumpDevStatus) {
+                @if (pumpDevStatus.online) {
+                  <button
+                    class="widget-action-btn"
+                    [class.btn-active]="pumpStatus === 'RUNNING' || pumpStatus === 'ON'"
+                    [disabled]="isPumpToggling"
+                    (click)="togglePump(pumpStatus)">
+                    {{ isPumpToggling ? '...' : (pumpStatus === 'RUNNING' || pumpStatus === 'ON') ? 'Turn Off' : 'Turn On' }}
+                  </button>
+                } @else {
+                  <span class="widget-offline-label">Device offline</span>
+                }
+              }
             </div>
 
             <!-- Wave swirl visual element -->
