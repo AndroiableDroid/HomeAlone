@@ -9,7 +9,7 @@
 #include "addons/RTDBHelper.h"
 
 // Firmware version -- bump this string with every OTA release
-#define APP_VERSION    "1.0.4"
+#define APP_VERSION    "1.0.5"
 
 #ifdef __has_include
 #  if __has_include("secrets.h")
@@ -72,6 +72,13 @@ const unsigned long HEARTBEAT_INTERVAL  = 15000;
 const unsigned long DOOR_CHECK_INTERVAL = 1000;
 const unsigned long PUMP_CHECK_INTERVAL = 5000;
 const unsigned long OTA_CHECK_INTERVAL  = 300000; // 5 minutes
+
+// ─── Scheduled restart ─────────────────────────────────────
+// Reboot every day at 06:00 local time to keep the device fresh.
+// IST = UTC + 5h30m = 19800 s offset, no DST.
+#define SCHEDULED_RESTART_HOUR  6
+#define NTP_TZ_OFFSET_SEC       19800   // IST: UTC+5:30
+bool scheduledRestartFired = false;     // guard: fire once per boot
 const unsigned long DOOR_RELOCK_DELAY_MS = 1000;
 
 bool isSetupMode = false;
@@ -421,6 +428,25 @@ void checkPumpStatus() {
   }
 }
 
+// ─── Scheduled Restart ────────────────────────────────────
+// Called every loop(). Reboots at SCHEDULED_RESTART_HOUR (local time).
+// The guard flag resets naturally because the device reboots.
+void checkScheduledRestart() {
+  if (scheduledRestartFired) return;
+
+  struct tm timeInfo;
+  if (!getLocalTime(&timeInfo, 0)) return; // NTP not ready yet
+
+  if (timeInfo.tm_hour == SCHEDULED_RESTART_HOUR && timeInfo.tm_min == 0) {
+    scheduledRestartFired = true; // prevent double-trigger this minute
+    Serial.printf("[Scheduler] %02d:00 reached — rebooting for daily maintenance.\n",
+                  SCHEDULED_RESTART_HOUR);
+    remoteLog("info", "[Scheduler] Daily scheduled reboot at 06:00.");
+    delay(1000); // let remoteLog finish
+    ESP.restart();
+  }
+}
+
 // ─── Heartbeat ─────────────────────────────────────────────
 void sendHeartbeat() {
   if (!Firebase.ready()) return;
@@ -753,6 +779,22 @@ void setup() {
   }
 
   Serial.println("\nWiFi Connected! IP: " + WiFi.localIP().toString());
+
+  // ── Sync NTP for scheduled-restart time-keeping ───────────
+  configTime(NTP_TZ_OFFSET_SEC, 0, "pool.ntp.org", "time.nist.gov");
+  Serial.print("[NTP] Syncing time");
+  struct tm ntpCheck;
+  for (int i = 0; i < 20 && !getLocalTime(&ntpCheck, 0); i++) {
+    delay(500);
+    Serial.print(".");
+  }
+  if (getLocalTime(&ntpCheck, 0)) {
+    char buf[32];
+    strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &ntpCheck);
+    Serial.printf(" OK: %s IST\n", buf);
+  } else {
+    Serial.println(" NTP sync failed (will retry in background).");
+  }
   digitalWrite(ledPin, HIGH);
 
   config.api_key        = API_KEY;
@@ -828,4 +870,6 @@ void loop() {
     lastOtaCheck = now;
     checkOTA();
   }
+
+  checkScheduledRestart();
 }
