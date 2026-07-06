@@ -9,7 +9,7 @@
 #include "addons/RTDBHelper.h"
 
 // Firmware version -- bump this string with every OTA release
-#define APP_VERSION    "1.0.5"
+#define APP_VERSION    "1.0.6"
 
 #ifdef __has_include
 #  if __has_include("secrets.h")
@@ -73,13 +73,18 @@ const unsigned long DOOR_CHECK_INTERVAL = 1000;
 const unsigned long PUMP_CHECK_INTERVAL = 5000;
 const unsigned long OTA_CHECK_INTERVAL  = 300000; // 5 minutes
 
-// ─── Scheduled restart ─────────────────────────────────────
-// Reboot every day at 06:00 local time to keep the device fresh.
+// ─── Scheduled restart & Activity tracking ─────────────────
+// Reboot every day at 22:00 (10 PM) local time to keep the device fresh.
 // IST = UTC + 5h30m = 19800 s offset, no DST.
-#define SCHEDULED_RESTART_HOUR  6
+#define SCHEDULED_RESTART_HOUR  22
 #define NTP_TZ_OFFSET_SEC       19800   // IST: UTC+5:30
 bool scheduledRestartFired = false;     // guard: fire once per boot
 const unsigned long DOOR_RELOCK_DELAY_MS = 1000;
+
+// Track last user activity (unlocking door, toggling pump, BLE commands, etc.)
+// Reboots if inactive for a long time (default: 6 hours) to prevent freeze-ups.
+unsigned long lastActivityTime = 0;
+#define INACTIVITY_RESTART_TIMEOUT_MS  21600000 // 6 hours in milliseconds
 
 bool isSetupMode = false;
 bool shouldReboot = false;
@@ -146,6 +151,7 @@ void flashLed(int times, int delayMs) {
 // ─── Hardware Action Helpers ────────────────────────────────
 
 void unlockDoorAction() {
+  lastActivityTime = millis();
   Serial.println(">>> UNLOCKING...");
   digitalWrite(relayPin, LOW);
   delay(DOOR_RELOCK_DELAY_MS);
@@ -154,6 +160,7 @@ void unlockDoorAction() {
 }
 
 void setPumpAction(bool on) {
+  lastActivityTime = millis();
   if (on) {
     Serial.println(">>> PUMP ON!");
     digitalWrite(pumpPin, LOW);
@@ -375,6 +382,9 @@ void commandCallback(FirebaseStream data) {
   if (data.dataTypeEnum() != firebase_rtdb_data_type_string) return;
 
   String cmd = data.stringData();
+  if (cmd != "IDLE") {
+    lastActivityTime = millis();
+  }
   Serial.printf("[Stream] /device/command = %s\n", cmd.c_str());
   remoteLog("info", "[Stream] Received remote command: " + cmd);
 
@@ -441,7 +451,17 @@ void checkScheduledRestart() {
     scheduledRestartFired = true; // prevent double-trigger this minute
     Serial.printf("[Scheduler] %02d:00 reached — rebooting for daily maintenance.\n",
                   SCHEDULED_RESTART_HOUR);
-    remoteLog("info", "[Scheduler] Daily scheduled reboot at 06:00.");
+    remoteLog("info", "[Scheduler] Daily scheduled reboot at 22:00.");
+    delay(1000); // let remoteLog finish
+    ESP.restart();
+  }
+}
+
+// ─── Inactivity Restart ───────────────────────────────────
+void checkInactivityRestart() {
+  if (millis() - lastActivityTime >= INACTIVITY_RESTART_TIMEOUT_MS) {
+    Serial.println("[Scheduler] Device inactive for too long — rebooting.");
+    remoteLog("info", "[Scheduler] Rebooting due to inactivity.");
     delay(1000); // let remoteLog finish
     ESP.restart();
   }
@@ -470,6 +490,7 @@ void sendHeartbeat() {
 
 class CtrlCallbacks : public NimBLECharacteristicCallbacks {
   void onWrite(NimBLECharacteristic *pCharacteristic, NimBLEConnInfo &connInfo) {
+    lastActivityTime = millis();
     String cmd = String(pCharacteristic->getValue().c_str());
     Serial.printf("[BLE CTRL] Received: %s\n", cmd.c_str());
 
@@ -590,6 +611,7 @@ class ServerCallbacks : public NimBLEServerCallbacks {
 
 class SsidCallbacks : public NimBLECharacteristicCallbacks {
   void onWrite(NimBLECharacteristic *pCharacteristic, NimBLEConnInfo &connInfo) {
+    lastActivityTime = millis();
     std::string value = pCharacteristic->getValue();
     bleSsid = String(value.c_str());
     Serial.print("BLE Received SSID: ");
@@ -599,6 +621,7 @@ class SsidCallbacks : public NimBLECharacteristicCallbacks {
 
 class PassCallbacks : public NimBLECharacteristicCallbacks {
   void onWrite(NimBLECharacteristic *pCharacteristic, NimBLEConnInfo &connInfo) {
+    lastActivityTime = millis();
     std::string value = pCharacteristic->getValue();
     blePass = String(value.c_str());
     Serial.println("BLE Received Password. Saving and rebooting...");
@@ -833,6 +856,8 @@ void setup() {
 
   // Always start BLE for direct control even in WiFi mode
   startBleServer();
+
+  lastActivityTime = millis();
 }
 
 // ─── Loop ──────────────────────────────────────────────────
@@ -846,6 +871,10 @@ void loop() {
     blinkLed(200);
     return;
   }
+
+  // Check scheduled daily restart and inactivity restart
+  checkScheduledRestart();
+  checkInactivityRestart();
 
   if (!isFirebaseReady) return;
 
@@ -870,6 +899,4 @@ void loop() {
     lastOtaCheck = now;
     checkOTA();
   }
-
-  checkScheduledRestart();
 }
