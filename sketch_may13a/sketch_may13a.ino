@@ -68,10 +68,17 @@ unsigned long lastHeartbeat = 0;
 unsigned long lastDoorCheck = 0;
 unsigned long lastPumpCheck = 0;
 unsigned long lastOtaCheck  = 0;
+unsigned long lastInetCheck = 0;
 const unsigned long HEARTBEAT_INTERVAL  = 15000;
 const unsigned long DOOR_CHECK_INTERVAL = 1000;
 const unsigned long PUMP_CHECK_INTERVAL = 5000;
 const unsigned long OTA_CHECK_INTERVAL  = 300000; // 5 minutes
+const unsigned long INET_CHECK_INTERVAL = 15000;  // 15 seconds
+
+// Internet connectivity watchdog: after this many consecutive failures,
+// clear WiFi credentials and reboot into BLE setup mode.
+#define INET_FAIL_THRESHOLD  5
+int inetFailCount = 0;
 
 // ─── Scheduled restart & Activity tracking ─────────────────
 // Reboot every day at 22:00 (10 PM) local time to keep the device fresh.
@@ -188,6 +195,22 @@ void remoteLog(const String &level, const String &msg) {
 
   int httpCode = http.POST(payload);
   http.end();
+}
+
+// ─── Internet Reachability Check ───────────────────────────
+// Lightweight test: Google's generate_204 returns HTTP 204 with an empty
+// body.  If we get *any* HTTP response we have internet.  A connect or
+// timeout failure means no internet.  Uses plain HTTP (no TLS overhead).
+bool hasInternet() {
+  if (WiFi.status() != WL_CONNECTED) return false;
+
+  HTTPClient http;
+  http.begin("http://clients3.google.com/generate_204");
+  http.setTimeout(5000);
+  int code = http.GET();
+  http.end();
+
+  return (code > 0);  // any HTTP response means we reached the internet
 }
 
 // ─── OTA Update ────────────────────────────────────────────
@@ -803,6 +826,27 @@ void setup() {
 
   Serial.println("\nWiFi Connected! IP: " + WiFi.localIP().toString());
 
+  // ── Verify internet reachability before proceeding ────────
+  // WiFi may associate to the router even when the router has no
+  // upstream internet.  A quick HTTP check catches this early.
+  Serial.print("[WiFi] Checking internet reachability...");
+  bool internetOk = false;
+  for (int attempt = 0; attempt < 3; attempt++) {
+    if (hasInternet()) { internetOk = true; break; }
+    Serial.print(".");
+    delay(2000);
+  }
+
+  if (!internetOk) {
+    Serial.println(" No internet!");
+    Serial.println("[WiFi] Connected to router but no internet. Entering BLE setup.");
+    WiFi.disconnect(true);
+    startBleServer();
+    startSetupMode();
+    return;
+  }
+  Serial.println(" OK");
+
   // ── Sync NTP for scheduled-restart time-keeping ───────────
   configTime(NTP_TZ_OFFSET_SEC, 0, "pool.ntp.org", "time.nist.gov");
   Serial.print("[NTP] Syncing time");
@@ -879,6 +923,32 @@ void loop() {
   if (!isFirebaseReady) return;
 
   unsigned long now = millis();
+
+  // ── Internet watchdog: detect prolonged internet loss ─────
+  // If the router loses upstream internet while we are running,
+  // Firebase ops will silently fail. After INET_FAIL_THRESHOLD
+  // consecutive failed pings, clear creds and reboot into BLE
+  // setup so the user can provision a new network.
+  if (now - lastInetCheck >= INET_CHECK_INTERVAL) {
+    lastInetCheck = now;
+    if (hasInternet()) {
+      inetFailCount = 0;
+    } else {
+      inetFailCount++;
+      Serial.printf("[WiFi] Internet check failed (%d/%d)\n",
+                    inetFailCount, INET_FAIL_THRESHOLD);
+      if (inetFailCount >= INET_FAIL_THRESHOLD) {
+        Serial.println("[WiFi] Internet lost for too long. Clearing creds, entering BLE setup.");
+        remoteLog("warn", "[WiFi] Internet lost — rebooting to BLE setup.");
+        WiFi.disconnect(true);
+        preferences.begin("wifi-creds", false);
+        preferences.clear();
+        preferences.end();
+        delay(1000);
+        ESP.restart();
+      }
+    }
+  }
 
   if (now - lastDoorCheck >= DOOR_CHECK_INTERVAL) {
     lastDoorCheck = now;
